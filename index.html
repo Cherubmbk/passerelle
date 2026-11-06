@@ -7506,7 +7506,7 @@ function boot() {
   initTheme(); initOrb(); applyA11y(); renderEasyBtn();
   $("#a11yBtn").onclick = e => { e.stopPropagation(); const P = $("#a11yPanel"); P.hidden = !P.hidden; $("#notifPanel").hidden = true; renderA11y(); };
   try { const t = new Date(); t.setHours(0, 0, 0, 0); S.infoRemDone = S.infoRemDone || []; for (const id of S.infoRem || []) { const e = INFO_EVENTS.find(x => x.id === id); if (!e || S.infoRemDone.includes(id)) continue; const diff = (dParse(e.debut) - t) / 864e5; if (diff >= 0 && diff <= 1) { S.infoRemDone.push(id); notify("📅", `${diff ? "Demain" : "Aujourd'hui"} : ${e.t}, ${e.lieu}${e.heure ? " (" + e.heure + ")" : ""}.`, { mail: true }); } } save(); } catch { }
-  renderAcct(); renderBell(); renderSearchForm(); runSearch(); go(VIEWS.some(v => v.id === S.view) ? S.view : "accueil"); BOOTED = true; if (!/nointro/.test(location.hash)) setTimeout(orbIntro, 450);
+  renderAcct(); renderBell(); renderSearchForm(); runSearch(); /* Chaque ouverture du site commence sur l'Accueil */ go("accueil"); BOOTED = true; if (!/nointro/.test(location.hash)) setTimeout(orbIntro, 450);
 }
 /* Démarrage après la lecture complète du script (les données intégrées en fin de fichier sont alors prêtes) */
 queueMicrotask(boot);
