@@ -2147,6 +2147,7 @@ function renderAccueil() {
   V.innerHTML = `<section class="hh"><div class="hh-bg" aria-hidden="true">${homeIllu("hero")}</div>
       <div class="hh-in"><p class="hh-kick">${greeting()}${u ? ` ${esc(u.nom.split(" ")[0])}` : ""} · ${new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</p><h1>${T("Par où voulez-vous commencer ?").replace(" ?", " ?")}</h1><p class="hh-lead">Choisissez le parcours qui correspond à votre situation. Chaque parcours se suit étape par étape, et vous pouvez passer de l'un à l'autre à tout moment.</p>
       <div class="ticker" id="ticker" aria-live="polite"></div></div></section>
+    <div class="paths hm-paths">${["emploi", "orient", "jeunes", "biz"].map(card).join("")}</div>
     <div class="hm-duo"><article class="hm-meet ${done ? "done" : ""}"><span class="hm-ic gold">${ico("equipe")}</span><div class="hm-meet-txt"><p class="hm-kick gold">${done ? "Votre portrait" : "Pour commencer"}</p><h2>${done ? "On se connaît mieux maintenant" : nm ? "Continuons à faire connaissance" : "Faisons connaissance"}</h2><p class="hm-d">${done ? esc((S.moi?.portrait?.portrait || "").slice(0, 180)) + "…" : "Quelques questions sur vous, votre quotidien et ce qui vous anime. Rien à voir avec un CV : c'est ce qui nous permettra de vous proposer ce qui vous correspond vraiment."}</p>
       <div class="meet-bar"><i style="width:${Math.max(4, Math.round(nm / MOI_Q.length * 100))}%"></i></div>${done ? "" : `<span class="small muted">${nm ? `Encore environ ${Math.max(1, Math.round(8 * (1 - nm / MOI_Q.length)))} minute${Math.round(8 * (1 - nm / MOI_Q.length)) > 1 ? "s" : ""}` : "Environ 8 minutes"}</span>`}</div>
       <div class="hm-meet-art" aria-hidden="true">${homeIllu("clip")}</div>
@@ -2154,7 +2155,6 @@ function renderAccueil() {
       ${homeRes()}</div>
     <article class="hm-qdj"><span class="hm-ic blue">${HBUBBLE}</span><div class="hm-qdj-main"><p class="hm-kick blue">Question du jour</p><p class="qdj-q">${esc(qd.q)}</p><div class="hm-qdj-row"><input type="text" id="qdjIn" value="${esc(qd.a || "")}" placeholder="Votre réponse, en quelques mots…" aria-label="Votre réponse"><button class="btn primary" id="qdjGo">Répondre</button></div></div>
       <aside class="hm-qdj-tip"><span>${ico("idee")}</span><p>Cette question nous aide à mieux comprendre ce qui vous motive.</p></aside></article>
-    <div class="paths hm-paths">${["emploi", "orient", "jeunes", "biz"].map(card).join("")}</div>
     ${infoTeaser()}
     <div class="hm-rows">
       <button class="hm-row" id="shareBtn"><span class="hm-ic blue">${ico("equipe")}</span><span class="hm-row-t"><b>Mon accompagnement</b><span>${S.partages.length ? `Dossier partagé avec ${S.partages.map(p => esc(p.nom)).join(", ")}` : "Un suivi personnalisé à chaque étape de votre parcours."}</span></span><span class="hm-chev">${HCHEV}</span></button>
