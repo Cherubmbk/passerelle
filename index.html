@@ -2574,12 +2574,14 @@ const RES_VIDEOS = [
   { id: "v-contact", t: "Comment contacter un recruteur sur LinkedIn ?", th: "recherche" },
   { id: "v-reconv", t: "Réussir sa reconversion professionnelle", th: "projet" },
 ];
+/* Fichiers audio : sur claude.ai ils sont servis depuis le stockage de l'artefact, ailleurs (GitHub Pages) depuis le dossier media/ du dépôt */
+const media = (blob, file) => window.claude?.use ? "/_blob/" + blob : file;
 const RES_AUDIOS = [
-  { id: "a-metier", t: "Quel métier est fait pour moi ?", d: "Les bonnes questions à se poser pour trouver un métier qui vous correspond.", th: "projet", dur: "5:07", src: "/_blob/51e5bf07b12a82d409b4a397d142b945", img: "/_blob/eb678de3634de700507a4bfcf7c1c5bc" },
-  { id: "a-comp", t: "Identifier et valoriser ses compétences", d: "Comment repérer vos atouts et les présenter efficacement.", th: "competences", dur: "6:11", src: "/_blob/bf37572f76fab190c62244323d073228", img: "/_blob/39c4b69560543329a3c14c25b89d0d4e" },
-  { id: "a-motiv", t: "Garder la motivation pendant la recherche", d: "Des conseils concrets pour rester positif et avancer.", th: "situations", dur: "5:19", src: "/_blob/02feedf330e6728ef94f9ab311f13039", img: "/_blob/1e652f07af914dcfc0aac90dbb6ac585" },
-  { id: "a-orga", t: "Comment organiser sa recherche d'emploi ?", d: "Méthodes et outils pour être plus efficace au quotidien.", th: "recherche", dur: "6:14", src: "/_blob/3e183b5740dd23eb59c798c5b3a196d8", img: "/_blob/4d941168875feceeca30998c8bd4d267" },
-  { id: "a-refus", t: "Rebondir après un refus", d: "Transformer un échec en une nouvelle opportunité.", th: "suivi", dur: "5:48", src: "/_blob/5904460e5a45e844d28757b872b8c992", img: "/_blob/fc5050d856234f5c3ceec9964bebf659" },
+  { id: "a-metier", t: "Quel métier est fait pour moi ?", d: "Les bonnes questions à se poser pour trouver un métier qui vous correspond.", th: "projet", dur: "5:07", src: media("51e5bf07b12a82d409b4a397d142b945", "media/audio-metier.mp4"), img: media("eb678de3634de700507a4bfcf7c1c5bc", "media/audio-metier.jpg") },
+  { id: "a-comp", t: "Identifier et valoriser ses compétences", d: "Comment repérer vos atouts et les présenter efficacement.", th: "competences", dur: "6:11", src: media("bf37572f76fab190c62244323d073228", "media/audio-competences.mp4"), img: media("39c4b69560543329a3c14c25b89d0d4e", "media/audio-competences.jpg") },
+  { id: "a-motiv", t: "Garder la motivation pendant la recherche", d: "Des conseils concrets pour rester positif et avancer.", th: "situations", dur: "5:19", src: media("02feedf330e6728ef94f9ab311f13039", "media/audio-motivation.mp4"), img: media("1e652f07af914dcfc0aac90dbb6ac585", "media/audio-motivation.jpg") },
+  { id: "a-orga", t: "Comment organiser sa recherche d'emploi ?", d: "Méthodes et outils pour être plus efficace au quotidien.", th: "recherche", dur: "6:14", src: media("3e183b5740dd23eb59c798c5b3a196d8", "media/audio-organisation.mp4"), img: media("4d941168875feceeca30998c8bd4d267", "media/audio-organisation.jpg") },
+  { id: "a-refus", t: "Rebondir après un refus", d: "Transformer un échec en une nouvelle opportunité.", th: "suivi", dur: "5:48", src: media("5904460e5a45e844d28757b872b8c992", "media/audio-refus.mp4"), img: media("fc5050d856234f5c3ceec9964bebf659", "media/audio-refus.jpg") },
 ];
 const resNb = t => esc(t).replace(/ ([?!:;])/g, "\u00a0$1");
 const resTh = k => RES_TH.find(x => x[0] === k) || RES_TH[0];
