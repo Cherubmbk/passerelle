@@ -162,6 +162,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 .proto-band[hidden]{display:none}
 .proto-band>p{flex:1;min-width:240px;margin:0}
 .proto-band .row{gap:8px;flex-wrap:wrap}
+#acctBtn[data-sync="error"],#acctBtn[data-sync="conflict"]{box-shadow:0 0 0 2px var(--warn)}
 .acct-data{border-top:1px solid var(--line);gap:8px}
 .plat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
 .plat{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;gap:12px}
@@ -1926,7 +1927,7 @@ const EXAMPLE_PROFILE = { demo: true, nom: "Camille Martin", titre: "Comptable",
 /* ============ État ============ */
 const KEY = "passerelle-proto-v1";
 function load() { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch { return null; } }
-function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} if (S.view === "biz") { clearTimeout(save._r); save._r = setTimeout(() => { try { bizRing(); } catch { } }, 120); } }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} cloudQueue(); if (S.view === "biz") { clearTimeout(save._r); save._r = setTimeout(() => { try { bizRing(); } catch { } }, 120); } }
 const now = Date.now();
 const DEFAULT = {
   user: null,
@@ -2294,12 +2295,263 @@ function wipeData() {
 }
 function renderProtoBand() {
   const B = $("#protoBand"); if (!B) return;
-  if (COMPTES_EN_LIGNE || S.bandOk) { B.hidden = true; return; }
+  if (COMPTES_EN_LIGNE || (SB && SESSION) || (S.bandOk && !SB) || (SB && S.bandOkCloud)) { B.hidden = true; return; }
   B.hidden = false;
+  if (SB) {
+    B.innerHTML = `<span aria-hidden="true">ⓘ</span><p><b>Pour l'instant, vos informations restent sur cet appareil.</b> Créez un compte gratuit pour les sauvegarder en ligne, sur des serveurs en France, et les retrouver sur votre téléphone comme sur votre ordinateur.</p>
+    <div class="row"><button class="btn primary sm" id="pbJoin">Créer mon compte</button><button class="btn ghost sm" id="pbLog">Me connecter</button><button class="iconbtn" id="pbX" aria-label="Masquer ce message">✕</button></div>`;
+    $("#pbJoin").onclick = () => openCloudAccount(null, false, "join"); $("#pbLog").onclick = () => openCloudAccount(null, false, "login");
+    $("#pbX").onclick = () => { S.bandOkCloud = true; save(); renderProtoBand(); };
+    return;
+  }
   B.innerHTML = `<span aria-hidden="true">ⓘ</span><p><b>Vos informations restent sur cet appareil</b>, dans ce navigateur : rien n'est envoyé sur un serveur. Évitez d'y saisir des informations sensibles, et faites une sauvegarde pour les retrouver sur un autre appareil.</p>
     <div class="row"><button class="btn sm" id="pbSave">Sauvegarder mes données</button><button class="btn ghost sm" id="pbMore">Restaurer · Effacer</button><button class="iconbtn" id="pbX" aria-label="Masquer ce message">✕</button></div>`;
   $("#pbSave").onclick = backupData; $("#pbMore").onclick = () => openAccount();
   $("#pbX").onclick = () => { S.bandOk = true; save(); renderProtoBand(); };
+}
+/* ============ Comptes en ligne (Supabase, serveurs à Paris) ============ */
+const SB_URL = "https://pzagzvnjsvzosttjhlfm.supabase.co", SB_KEY = "sb_publishable_wB3MKl7pgYni5TndKPIlbQ_YZKItPtd";
+const SB_LIB = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4";
+const CONSENT_V = "v1-2026-11";
+/* Option A : ces situations restent sur l'appareil et ne sont jamais envoyées en ligne */
+const SENSIBLES = ["Reconnaissance travailleur handicapé (RQTH)", "Bénéficiaire du RSA", "Arrivé(e) récemment en France"];
+const CKEY = KEY + "-cloud";
+let SB = null, SESSION = null, CPUSH = false, CPEND = false, CSTATUS = "", CAPPLYING = false;
+const cm = () => { try { return JSON.parse(localStorage.getItem(CKEY) || "{}"); } catch { return {}; } };
+const cmSave = m => { try { localStorage.setItem(CKEY, JSON.stringify(m)); } catch { } };
+const deviceLabel = () => (/Mobi|Android|iPhone/i.test(navigator.userAgent) ? "Téléphone" : "Ordinateur") + " · " + new Date().toLocaleDateString("fr-FR");
+function cloudState() {
+  const c = JSON.parse(JSON.stringify(S));
+  c.situation = (c.situation || []).filter(x => !SENSIBLES.includes(x));
+  delete c.view;
+  let txt = JSON.stringify(c);
+  if (txt.length > 1800000) { // images trop lourdes : on garde le reste
+    const strip = o => { for (const k in o) { const v = o[k]; if (typeof v === "string" && v.startsWith("data:") && v.length > 20000) o[k] = ""; else if (v && typeof v === "object") strip(v); } };
+    strip(c); txt = JSON.stringify(c);
+    if (!cloudState.warned) { cloudState.warned = true; toast("Certaines images sont trop lourdes pour la sauvegarde en ligne : elles restent sur cet appareil."); }
+  }
+  return c;
+}
+function localHasData() {
+  return !!(S.user || (S.profile && !S.profile.demo) || S.apps.some(a => !a.demo) || Object.keys(S.bilan?.res || {}).length || S.biz?.projet?.desc || (S.pasted || []).length);
+}
+function applyRemote(state, version, uid) {
+  const keep = (S.situation || []).filter(x => SENSIBLES.includes(x));
+  const next = Object.assign({}, JSON.parse(JSON.stringify(DEFAULT)), state);
+  next.situation = [...new Set([...(state.situation || []), ...keep])];
+  next.user = Object.assign({ type: "Candidat" }, state.user || {}, { email: SESSION?.user?.email || state.user?.email || "" });
+  try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { }
+  cmSave({ uid, v: version, dirty: false, at: Date.now() });
+  CAPPLYING = true; location.reload();
+}
+function setSync(st) { CSTATUS = st; const el = $("#acSync"); if (el) el.textContent = syncText(); const b = $("#acctBtn"); if (b) b.dataset.sync = st; }
+function syncText() {
+  const m = cm();
+  return ({ saving: "Sauvegarde en cours…", error: "La sauvegarde en ligne a échoué : vos données restent sur cet appareil, nouvel essai à la prochaine modification.", conflict: "Vos données ont été modifiées sur un autre appareil." })[CSTATUS]
+    || (m.at ? `Sauvegardé en ligne le ${new Date(m.at).toLocaleDateString("fr-FR")} à ${new Date(m.at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}.` : "Sauvegarde en ligne active.");
+}
+function cloudQueue() {
+  if (!SB || !SESSION || CAPPLYING) return;
+  const m = cm(); if (m.uid !== SESSION.user.id) return;
+  m.dirty = true; cmSave(m);
+  clearTimeout(cloudQueue.t); cloudQueue.t = setTimeout(cloudPush, 2500);
+}
+async function cloudPush() {
+  if (!SB || !SESSION) return;
+  if (CPUSH) { CPEND = true; return; }
+  CPUSH = true; setSync("saving");
+  try {
+    const m = cm();
+    const { data, error } = await SB.rpc("save_app_state", { p_state: cloudState(), p_expected_version: m.v || 0, p_device: deviceLabel() });
+    if (error) throw error;
+    if (data.conflict) { setSync("conflict"); openConflict(data); }
+    else { cmSave({ uid: SESSION.user.id, v: data.version, dirty: false, at: Date.now() }); setSync("ok"); }
+  } catch (e) { setSync("error"); }
+  CPUSH = false; if (CPEND) { CPEND = false; cloudPush(); }
+}
+async function cloudFetch() {
+  const { data, error } = await SB.from("app_state").select("state,version,updated_at,device_label").eq("user_id", SESSION.user.id).maybeSingle();
+  if (error) throw error; return data;
+}
+async function cloudImport() {
+  const { data, error } = await SB.rpc("import_local_state", { p_state: cloudState(), p_consent_version: CONSENT_V, p_device: deviceLabel() });
+  if (error) throw error;
+  cmSave({ uid: SESSION.user.id, v: data.version, dirty: false, at: Date.now() }); setSync("ok");
+}
+/* À l'ouverture du site ou juste après la connexion */
+async function cloudSync() {
+  if (!SESSION) return;
+  const uid = SESSION.user.id, m = cm(), hadData = localHasData();
+  try {
+    if (!S.user || !S.user.email) { S.user = Object.assign({ type: "Candidat" }, S.user || {}, { nom: S.user?.nom || SESSION.user.user_metadata?.display_name || SESSION.user.email.split("@")[0], email: SESSION.user.email }); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { } renderAcct(); }
+    const r = await cloudFetch();
+    if (m.uid === uid) { // cet appareil est déjà relié à ce compte
+      if (!r) { await cloudImport(); return; }
+      if (r.version === m.v) { if (m.dirty) cloudPush(); else setSync("ok"); return; }
+      if (!m.dirty) return applyRemote(r.state, r.version, uid);
+      setSync("conflict"); return openConflict({ version: r.version, updated_at: r.updated_at, device: r.device_label });
+    }
+    // première connexion sur cet appareil
+    if (!r) { await cloudImport(); toast("Vos données sont maintenant sauvegardées en ligne."); return; }
+    if (!hadData) return applyRemote(r.state, r.version, uid);
+    openFirstChoice(r);
+  } catch (e) { setSync("error"); }
+}
+function whenTxt(r) { return r.updated_at ? `le ${new Date(r.updated_at).toLocaleDateString("fr-FR")} à ${new Date(r.updated_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}${r.device || r.device_label ? ` (${esc(r.device || r.device_label)})` : ""}` : ""; }
+function openFirstChoice(r) {
+  modal(`<div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="fcT"><div class="m-head"><div><p class="label">Mon compte</p><h2 id="fcT">Quelles données garder ?</h2></div></div>
+    <div class="m-body"><p>Votre compte contient déjà des données, enregistrées ${whenTxt(r)}. Cet appareil contient aussi des données.</p>
+      <div class="row"><button class="btn primary" id="fcRemote">Garder celles de mon compte</button><button class="btn" id="fcLocal">Garder celles de cet appareil</button></div>
+      <p class="small muted">Dans les deux cas, une copie de la version remplacée est conservée dans votre compte.</p></div></div>`);
+  $("#fcRemote").onclick = () => applyRemote(r.state, r.version, SESSION.user.id);
+  $("#fcLocal").onclick = async () => { closeModal(); try { await cloudImport(); toast("Les données de cet appareil sont sauvegardées dans votre compte."); } catch { setSync("error"); toast("La sauvegarde en ligne a échoué. Réessayez plus tard."); } };
+}
+function openConflict(d) {
+  modal(`<div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="cfT"><div class="m-head"><div><p class="label">Sauvegarde en ligne</p><h2 id="cfT">Modifié sur un autre appareil</h2></div></div>
+    <div class="m-body"><p>Vos données ont été modifiées ailleurs ${whenTxt(d)}, et aussi sur cet appareil. Quelle version garder ?</p>
+      <div class="row"><button class="btn primary" id="cfRemote">La version de l'autre appareil</button><button class="btn" id="cfLocal">Celle de cet appareil</button></div>
+      <p class="small muted">La version remplacée est conservée en copie dans votre compte.</p></div></div>`);
+  $("#cfRemote").onclick = async () => { try { const r = await cloudFetch(); if (r) applyRemote(r.state, r.version, SESSION.user.id); } catch { toast("Impossible de récupérer la version en ligne. Réessayez."); } };
+  $("#cfLocal").onclick = async () => { closeModal(); try { const r = await cloudFetch(); const m = cm(); m.v = r ? r.version : 0; m.uid = SESSION.user.id; cmSave(m); cloudPush(); } catch { setSync("error"); } };
+}
+function authErr(e) {
+  const m = String(e?.message || e || "");
+  if (/Invalid login credentials/i.test(m)) return "Adresse e-mail ou mot de passe incorrect.";
+  if (/Email not confirmed/i.test(m)) return "Confirmez d'abord votre adresse : cliquez sur le lien reçu par e-mail.";
+  if (/already registered|already been registered/i.test(m)) return "Un compte existe déjà avec cette adresse. Connectez-vous.";
+  if (/Password should be|at least/i.test(m)) return "Le mot de passe doit contenir au moins 8 caractères.";
+  if (/rate limit|too many/i.test(m)) return "Trop de tentatives. Patientez quelques minutes.";
+  if (/fetch|network/i.test(m)) return "Connexion impossible. Vérifiez votre accès à Internet.";
+  return "Une erreur est survenue. Réessayez.";
+}
+const SITE_URL = () => location.origin + location.pathname;
+function privacyText() {
+  return `<div class="small" style="display:flex;flex-direction:column;gap:6px"><p><b>Ce qui est enregistré en ligne :</b> votre nom, votre adresse e-mail, votre CV et votre profil, vos tests et votre bilan, vos candidatures, votre projet d'entreprise et vos préférences d'affichage.</p>
+    <p><b>Ce qui reste sur votre appareil :</b> la reconnaissance travailleur handicapé (RQTH), le RSA et l'arrivée récente en France. Ces informations ne sont jamais envoyées.</p>
+    <p><b>Où :</b> chez l'hébergeur Supabase, sur des serveurs situés à Paris. <b>Pourquoi :</b> pour retrouver vos informations sur tous vos appareils. Personne d'autre ne peut les lire.</p>
+    <p><b>Vos droits :</b> depuis « Mon compte », vous pouvez télécharger toutes vos données ou supprimer votre compte à tout moment ; tout est alors effacé.</p></div>`;
+}
+function openCloudAccount(then, asPro, mode) {
+  if (SESSION) return openCloudSigned();
+  let m = mode || (S.user ? "login" : "join");
+  const draw = () => {
+    modal(`<div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="caT"><div class="m-head"><div><p class="label">Mon compte</p><h2 id="caT">${m === "join" ? "Créer mon compte" : m === "login" ? "Me connecter" : "Mot de passe oublié"}</h2></div><button class="iconbtn" data-close aria-label="Fermer">✕</button></div>
+      <form class="m-body" id="caForm" autocomplete="on">
+        ${m !== "forgot" ? `<div class="subtabs" role="tablist"><button type="button" role="tab" aria-selected="${m === "join"}" data-cam="join">Créer un compte</button><button type="button" role="tab" aria-selected="${m === "login"}" data-cam="login">Me connecter</button></div>` : ""}
+        ${m === "join" ? `<div class="field"><label for="caNom">Prénom et nom</label><input type="text" id="caNom" autocomplete="name" required value="${esc(S.user?.nom || (S.profile && !S.profile.demo ? S.profile.nom || "" : ""))}"></div>` : ""}
+        <div class="field"><label for="caMail">Adresse e-mail</label><input type="email" id="caMail" autocomplete="email" required value="${esc(S.user?.email || "")}"></div>
+        ${m !== "forgot" ? `<div class="field"><label for="caPw">Mot de passe${m === "join" ? " (8 caractères minimum)" : ""}</label><input type="password" id="caPw" autocomplete="${m === "join" ? "new-password" : "current-password"}" minlength="8" required></div>` : ""}
+        ${m === "join" ? `<div class="field"><label for="caType">Je suis</label><select id="caType">${["Candidat", "Conseiller en insertion ou emploi (compte pro)", "École ou organisme de formation (compte pro)", "Cabinet de recrutement (compte pro)", "Recruteur ou entreprise (compte pro)", "Incubateur, CCI, CMA ou réseau d'accompagnement (compte pro)"].map(t => `<option ${(S.user?.type === t || (asPro && t.startsWith("Conseiller"))) ? "selected" : ""}>${t}</option>`).join("")}</select></div>
+          <details class="small"><summary style="cursor:pointer">Ce qui est enregistré et où</summary>${privacyText()}</details>
+          <label class="check"><input type="checkbox" id="caOk" required> J'accepte que mes informations soient enregistrées en ligne, sur des serveurs en France, pour les retrouver sur tous mes appareils. Je peux télécharger mes données ou supprimer mon compte à tout moment.</label>` : ""}
+        ${m === "forgot" ? `<p class="small muted">Nous vous envoyons un lien pour choisir un nouveau mot de passe.</p>` : ""}
+        <p class="small" id="caMsg" role="alert" style="color:var(--bad)"></p>
+        <div class="row"><button class="btn primary" type="submit" id="caGo">${m === "join" ? "Créer mon compte" : m === "login" ? "Me connecter" : "Envoyer le lien"}</button>
+          ${m === "login" ? `<button type="button" class="btn ghost sm" id="caForgot">Mot de passe oublié ?</button>` : ""}${m === "forgot" ? `<button type="button" class="btn ghost sm" data-cam="login">Retour</button>` : ""}</div>
+        ${m === "join" && localHasData() ? `<p class="small muted">Les informations déjà saisies sur cet appareil seront ajoutées à votre compte.</p>` : ""}
+      </form></div>`);
+    $("#ov").querySelectorAll("[data-cam]").forEach(b => b.onclick = () => { m = b.dataset.cam; draw(); });
+    const fg = $("#caForgot"); if (fg) fg.onclick = () => { m = "forgot"; draw(); };
+    $("#caForm").onsubmit = async e => {
+      e.preventDefault(); const go = $("#caGo"), msg = $("#caMsg"); msg.textContent = ""; go.disabled = true;
+      const email = $("#caMail").value.trim();
+      try {
+        if (m === "forgot") {
+          const { error } = await SB.auth.resetPasswordForEmail(email, { redirectTo: SITE_URL() }); if (error) throw error;
+          msg.style.color = "var(--good)"; msg.textContent = "C'est envoyé. Ouvrez le lien reçu par e-mail pour choisir un nouveau mot de passe."; return;
+        }
+        const pw = $("#caPw").value;
+        if (m === "join") {
+          const nom = $("#caNom").value.trim(), type = $("#caType").value;
+          const { data, error } = await SB.auth.signUp({ email, password: pw, options: { data: { display_name: nom }, emailRedirectTo: SITE_URL() } });
+          if (error) throw error;
+          S.user = { nom, email, type, mailNotif: false }; S.consentPending = true; save(); renderAcct();
+          if (!data.session) {
+            modal(`<div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="ckT"><div class="m-head"><div><p class="label">Mon compte</p><h2 id="ckT">Vérifiez votre boîte mail</h2></div><button class="iconbtn" data-close aria-label="Fermer">✕</button></div>
+              <div class="m-body"><p>Nous avons envoyé un lien à <b>${esc(email)}</b>. Cliquez dessus pour activer votre compte : vos informations seront alors sauvegardées en ligne.</p><p class="small muted">Pas reçu ? Regardez dans les indésirables. En attendant, vous pouvez continuer à utiliser Passerelle normalement.</p><button class="btn primary" data-close>D'accord</button></div></div>`);
+          } else closeModal();
+          if (then) then();
+          return;
+        }
+        const { error } = await SB.auth.signInWithPassword({ email, password: pw }); if (error) throw error;
+        closeModal(); if (then) then();
+      } catch (er) { msg.style.color = "var(--bad)"; msg.textContent = authErr(er); }
+      finally { if (document.body.contains(go)) go.disabled = false; }
+    };
+  };
+  draw();
+}
+function openCloudSigned() {
+  const u = S.user || {};
+  modal(`<div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="csT"><div class="m-head"><div><p class="label">Mon compte</p><h2 id="csT">${esc(u.nom || "Mon compte")}</h2><p class="small muted">${esc(SESSION.user.email)}</p></div><button class="iconbtn" data-close aria-label="Fermer">✕</button></div>
+    <form class="m-body" id="csForm">
+      <p class="note"><span aria-hidden="true">☁</span><span id="acSync">${syncText()}</span></p>
+      <div class="field"><label for="csNom">Prénom et nom</label><input type="text" id="csNom" required value="${esc(u.nom || "")}"></div>
+      <div class="field"><label for="csType">Je suis</label><select id="csType">${["Candidat", "Conseiller en insertion ou emploi (compte pro)", "École ou organisme de formation (compte pro)", "Cabinet de recrutement (compte pro)", "Recruteur ou entreprise (compte pro)", "Incubateur, CCI, CMA ou réseau d'accompagnement (compte pro)"].map(t => `<option ${u.type === t ? "selected" : ""}>${t}</option>`).join("")}</select></div>
+      <div class="row"><button class="btn primary" type="submit">Enregistrer</button><button class="btn" type="button" id="csShare">Envoyer mon dossier à mon conseiller</button></div>
+    </form>
+    <div class="m-body acct-data"><span class="label">Mes données</span>
+      <details class="small"><summary style="cursor:pointer">Ce qui est enregistré et où</summary>${privacyText()}</details>
+      <div class="row"><button class="btn sm" type="button" id="csExport">Télécharger toutes mes données</button><button class="btn sm" type="button" id="csOut">Me déconnecter</button><button class="btn ghost sm" type="button" id="csDel">Supprimer mon compte</button></div></div></div>`);
+  $("#csForm").onsubmit = async e => {
+    e.preventDefault(); S.user = Object.assign({}, S.user, { nom: $("#csNom").value.trim(), type: $("#csType").value, email: SESSION.user.email }); save(); renderAcct();
+    try { await SB.from("profiles").update({ display_name: S.user.nom.slice(0, 80) }).eq("id", SESSION.user.id); } catch { }
+    closeModal(); toast("C'est enregistré.");
+  };
+  $("#csShare").onclick = () => openSendDossier();
+  $("#csExport").onclick = async () => {
+    try { const { data, error } = await SB.rpc("export_my_data"); if (error) throw error; blobDownload(`passerelle-mes-donnees-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data, null, 1), "application/json"); toast("Vos données sont téléchargées."); }
+    catch { toast("Le téléchargement a échoué. Réessayez."); }
+  };
+  $("#csOut").onclick = async () => {
+    const wipe = confirm("Vous allez être déconnecté. Effacer aussi vos informations de cet appareil ? (Conseillé sur un ordinateur partagé : elles restent dans votre compte.)\n\nOK = effacer de cet appareil · Annuler = les garder ici");
+    clearTimeout(cloudQueue.t); if (cm().dirty) await cloudPush();
+    await SB.auth.signOut();
+    try { localStorage.removeItem(CKEY); if (wipe) localStorage.removeItem(KEY); } catch { }
+    location.reload();
+  };
+  $("#csDel").onclick = async () => {
+    if (!confirm("Supprimer définitivement votre compte et toutes vos informations en ligne ? Cette action est irréversible.")) return;
+    try {
+      const { data, error } = await SB.functions.invoke("delete-account", { method: "POST" });
+      if (error || !data?.ok) throw error || new Error("échec");
+      await SB.auth.signOut().catch(() => { });
+      try { localStorage.removeItem(CKEY); localStorage.removeItem(KEY); } catch { }
+      alert("Votre compte et vos informations ont été supprimés."); location.reload();
+    } catch { toast("La suppression a échoué. Réessayez dans quelques minutes."); }
+  };
+}
+function openNewPassword() {
+  modal(`<div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="npT"><div class="m-head"><div><p class="label">Mon compte</p><h2 id="npT">Nouveau mot de passe</h2></div></div>
+    <form class="m-body" id="npForm"><div class="field"><label for="npPw">Nouveau mot de passe (8 caractères minimum)</label><input type="password" id="npPw" autocomplete="new-password" minlength="8" required></div>
+    <p class="small" id="npMsg" role="alert" style="color:var(--bad)"></p><button class="btn primary" type="submit">Enregistrer</button></form></div>`);
+  $("#npForm").onsubmit = async e => { e.preventDefault(); const { error } = await SB.auth.updateUser({ password: $("#npPw").value }); if (error) { $("#npMsg").textContent = authErr(error); return; } closeModal(); toast("Votre mot de passe est changé."); };
+}
+async function recordConsents() {
+  if (!SESSION) return;
+  try {
+    if (!S.consentPending) { const { count } = await SB.from("consents").select("id", { count: "exact", head: true }).eq("purpose", "cgu"); if (count) return; }
+    await SB.from("consents").insert([{ user_id: SESSION.user.id, purpose: "cgu", text_version: CONSENT_V }, { user_id: SESSION.user.id, purpose: "confidentialite", text_version: CONSENT_V }]); S.consentPending = false; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { } } catch { }
+}
+function cloudInit() {
+  if (window.claude?.use || COMPTES_EN_LIGNE || cloudInit.done) return; // sur claude.ai : fonctionnement local
+  cloudInit.done = true;
+  const sc = document.createElement("script"); sc.src = SB_LIB; sc.async = true;
+  sc.onload = async () => {
+    try {
+      SB = window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: "passerelle-auth" } });
+      const { data } = await SB.auth.getSession(); SESSION = data.session;
+      SB.auth.onAuthStateChange((ev, s) => {
+        const had = !!SESSION; SESSION = s; renderAcct(); renderProtoBand();
+        if (ev === "PASSWORD_RECOVERY") setTimeout(openNewPassword, 300);
+        else if (ev === "SIGNED_IN" && !had) setTimeout(async () => { await recordConsents(); cloudSync(); }, 0);
+      });
+      renderAcct(); renderProtoBand();
+      if (SESSION) { await recordConsents(); cloudSync(); }
+    } catch { SB = null; renderProtoBand(); }
+  };
+  sc.onerror = () => { SB = null; };
+  document.head.appendChild(sc);
 }
 function proDemoBanner() {
   const V = $("#v-pro"); if (COMPTES_EN_LIGNE || !V || V.querySelector(".pro-demo")) return;
@@ -2339,6 +2591,7 @@ function renderAcct() {
 }
 $("#acctBtn").onclick = () => openAccount();
 function openAccount(then, asPro) {
+  if (SB) return openCloudAccount(then, asPro);
   const u = S.user || {};
   modal(`<div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="accT">
     <div class="m-head"><div><h2 id="accT">${S.user ? "Mon compte" : "Créer mon compte"}</h2><p class="small muted">${COMPTES_EN_LIGNE ? "Votre adresse sera transmise aux recruteurs pour qu'ils vous répondent." : "Votre compte est enregistré sur cet appareil, dans ce navigateur."}</p></div><button class="iconbtn" data-close aria-label="Fermer">✕</button></div>
@@ -7777,7 +8030,7 @@ function boot() {
   initTheme(); initOrb(); applyA11y(); renderEasyBtn();
   $("#a11yBtn").onclick = e => { e.stopPropagation(); const P = $("#a11yPanel"); P.hidden = !P.hidden; $("#notifPanel").hidden = true; renderA11y(); };
   try { const t = new Date(); t.setHours(0, 0, 0, 0); S.infoRemDone = S.infoRemDone || []; for (const id of S.infoRem || []) { const e = INFO_EVENTS.find(x => x.id === id); if (!e || S.infoRemDone.includes(id)) continue; const diff = (dParse(e.debut) - t) / 864e5; if (diff >= 0 && diff <= 1) { S.infoRemDone.push(id); notify("📅", `${diff ? "Demain" : "Aujourd'hui"} : ${e.t}, ${e.lieu}${e.heure ? " (" + e.heure + ")" : ""}.`, { mail: true }); } } save(); } catch { }
-  renderAcct(); renderBell(); renderSearchForm(); runSearch(); renderProtoBand(); /* Chaque ouverture du site commence sur l'Accueil */ go("accueil"); BOOTED = true; if (!/nointro/.test(location.hash)) setTimeout(orbIntro, 450);
+  renderAcct(); renderBell(); renderSearchForm(); runSearch(); renderProtoBand(); cloudInit(); /* Chaque ouverture du site commence sur l'Accueil */ go("accueil"); BOOTED = true; if (!/nointro/.test(location.hash)) setTimeout(orbIntro, 450);
 }
 /* Démarrage après la lecture complète du script (les données intégrées en fin de fichier sont alors prêtes) */
 queueMicrotask(boot);
