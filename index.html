@@ -158,6 +158,11 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 .tag.ex{background:var(--warn-soft);border-color:transparent;color:var(--warn)}
 .adcard{border:1px dashed var(--ad);background:var(--ad-soft);border-radius:14px;padding:14px 18px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between}
 .adcard p{font-size:.92rem}
+.proto-band{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:0 0 20px;padding:10px 14px;border:1px solid color-mix(in srgb,var(--accent) 28%,var(--line));background:var(--accent-soft);border-radius:12px;font-size:.9rem}
+.proto-band[hidden]{display:none}
+.proto-band>p{flex:1;min-width:240px;margin:0}
+.proto-band .row{gap:8px;flex-wrap:wrap}
+.acct-data{border-top:1px solid var(--line);gap:8px}
 .plat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
 .plat{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;gap:12px}
 .plat-t{display:flex;flex-direction:column;gap:4px}.plat-t b{font-size:1.02rem}
@@ -1722,6 +1727,7 @@ table.cmp th.st-col,table.cmp td.st-col{background:color-mix(in srgb,var(--rc) 9
 </header>
 
 <main id="main">
+<div class="proto-band" id="protoBand" hidden></div>
 <nav class="chapbar" id="chapbar" aria-label="Étapes du parcours" hidden></nav>
 
 <!-- ACCUEIL -->
@@ -1944,6 +1950,9 @@ const DEFAULT = {
    La recherche ouvre les vraies offres sur les sites d'emploi. Le jour où une vraie source est branchée,
    passer OFFRES_LIVE à true réactive la liste d'offres, les alertes intégrées et les relances automatiques. */
 const OFFRES_LIVE = false;
+/* Comptes en ligne (Supabase) : tant qu'ils ne sont pas branchés, tout reste dans ce navigateur.
+   Le partage avec le conseiller se fait par un dossier envoyé par e-mail, et l'Espace pro est une démonstration. */
+const COMPTES_EN_LIGNE = false;
 let S = Object.assign({}, DEFAULT, load() || {});
 if (!OFFRES_LIVE) S.feed = (S.feed || []).filter(f => f.offer?.recId && !f.offer.demo);
 if (S.pistes === "loading") S.pistes = null; if (S.bilan?.analyse === "loading") S.bilan.analyse = null; if (S.biz?.analyse === "loading") S.biz.analyse = null; if (S.biz?.vigilAI === "loading") S.biz.vigilAI = null; if (S.biz?.coach === "loading") S.biz.coach = null; (S.bilan?.retenues || []).forEach(r => { if (r.parcours === "loading") r.parcours = null; }); if (S.quizRes === "loading") S.quizRes = null;
@@ -1960,8 +1969,21 @@ function aiErr(e) {
   if (["not_granted", "sampling_disabled", "not_declared", "capability_disabled"].includes(e?.code)) { sample = null; setAI(false); }
   return m[e?.code] || "L'assistant n'a pas répondu. Réessayez.";
 }
+function blobDownload(name, text, type = "text/plain;charset=utf-8") {
+  try {
+    const url = URL.createObjectURL(new Blob([text], { type })), a = document.createElement("a");
+    a.href = url; a.download = name; a.rel = "noopener"; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000); return true;
+  } catch { toast("Le téléchargement n'a pas pu démarrer. Copiez le texte à la place."); return false; }
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch {
+    const t = document.createElement("textarea"); t.value = text; t.style.position = "fixed"; t.style.opacity = "0"; document.body.appendChild(t); t.select();
+    let ok = false; try { ok = document.execCommand("copy"); } catch { } t.remove(); return ok;
+  }
+}
 async function saveFile(name, text) {
-  if (!downloads) { toast("Le téléchargement n'est pas disponible ici. Copiez le texte depuis le champ."); return; }
+  if (!downloads) { blobDownload(name, text); return; }
   try { await downloads.save({ filename: name, data: text }); } catch (e) { if (e?.code !== "cancelled" && e?.code !== "declined") toast("Le fichier n'a pas été enregistré."); }
 }
 
@@ -2170,7 +2192,7 @@ function renderAccueil() {
       <aside class="hm-qdj-tip"><span>${ico("idee")}</span><p>Cette question nous aide à mieux comprendre ce qui vous motive.</p></aside></article>
     ${infoTeaser()}
     <div class="hm-rows">
-      <button class="hm-row" id="shareBtn"><span class="hm-ic blue">${ico("equipe")}</span><span class="hm-row-t"><b>Mon accompagnement</b><span>${S.partages.length ? `Dossier partagé avec ${S.partages.map(p => esc(p.nom)).join(", ")}` : "Un suivi personnalisé à chaque étape de votre parcours."}</span></span><span class="hm-chev">${HCHEV}</span></button>
+      <button class="hm-row" id="shareBtn"><span class="hm-ic blue">${ico("equipe")}</span><span class="hm-row-t"><b>Mon accompagnement</b><span>${!COMPTES_EN_LIGNE ? (S.envois?.length ? `Dossier préparé pour ${esc(S.envois[0].to || "votre conseiller")} le ${fmtDate(S.envois[0].d)} · l'envoyer à nouveau` : "Envoyez votre dossier à votre conseiller en quelques clics.") : S.partages.length ? `Dossier partagé avec ${S.partages.map(p => esc(p.nom)).join(", ")}` : "Un suivi personnalisé à chaque étape de votre parcours."}</span></span><span class="hm-chev">${HCHEV}</span></button>
       <button class="hm-row" data-v="${unread ? "alertes" : "suivi"}"><span class="hm-ic blue">${ico("calendrier")}</span><span class="hm-row-t"><b>En ce moment</b><span>${unread || nApps || S.recos.length ? `${unread} nouvelle(s) offre(s) · ${nApps} candidature(s) · ${S.recos.length} recommandation(s)` : "Les dernières opportunités et ressources pour vous."}</span></span><span class="hm-chev">${HCHEV}</span></button>
     </div>
     <p class="small muted" style="text-align:center">Vous êtes conseiller, école, cabinet ou incubateur ? <a href="#" data-g="pro">Découvrir l'Espace pro</a></p>`;
@@ -2182,7 +2204,109 @@ function renderAccueil() {
 
 /* ============ Partage avec un conseiller ============ */
 const SHARE_SCOPES = [["profil", "Mon CV et mon profil"], ["candidatures", "Mes candidatures"], ["bilan", "Mon bilan d'orientation"], ["biz", "Mon projet d'entreprise"]];
+function dossierTexte(sc) {
+  const L = [], nom = S.user?.nom || (S.profile && !S.profile.demo ? S.profile.nom : "") || "", p = S.profile || {};
+  L.push(`DOSSIER PASSERELLE${nom ? " · " + nom : ""}`, `Préparé le ${new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}`, "");
+  if (sc.profil) {
+    L.push("— PROFIL —");
+    if (!S.profile || p.demo) L.push("CV pas encore déposé sur Passerelle.");
+    else { L.push([p.titre, p.experience != null && p.experience !== "" ? `${p.experience} ans d'expérience` : "", p.ville].filter(Boolean).join(" · ")); if ((p.competences || []).length) L.push("Compétences : " + p.competences.join(", ")); }
+    if ((S.search?.metiers || []).length) L.push("Métiers recherchés : " + S.search.metiers.join(", ") + (S.search.ville ? ` · ${S.search.ville}` : ""));
+    if (S.cvText && S.profile && !p.demo) L.push("", "CV :", S.cvText.trim());
+    L.push("");
+  }
+  if (sc.candidatures) {
+    const A = S.apps.filter(a => !a.demo);
+    L.push("— CANDIDATURES —");
+    if (!A.length) L.push("Aucune candidature pour le moment.");
+    A.forEach(a => { const rl = a.events.filter(e => e.k === "rl").length; L.push(`• ${a.offer.titre} · ${a.offer.entreprise}${a.offer.ville ? ` (${a.offer.ville})` : ""} · envoyée le ${new Date(a.date).toLocaleDateString("fr-FR")} · ${(STATUS[a.status] || STATUS.sent)[0]}${rl ? ` · ${rl} relance${rl > 1 ? "s" : ""}` : ""}${a.offer.url ? ` · ${a.offer.url}` : ""}`); });
+    L.push("");
+  }
+  if (sc.bilan) {
+    const done = TESTS.filter(t => S.bilan?.res?.[t.id]?.done);
+    L.push("— BILAN D'ORIENTATION —");
+    if (!done.length) L.push("Aucun test terminé.");
+    done.forEach(t => L.push(`• ${t.court} : ${S.bilan.res[t.id].summary || "terminé"}`));
+    const ret = (S.bilan?.retenues || []).map(r => r.metier); if (ret.length) L.push("Pistes métiers retenues : " + ret.join(", "));
+    L.push("");
+  }
+  if (sc.biz) {
+    L.push("— PROJET D'ENTREPRISE —");
+    L.push(S.biz?.projet?.desc ? S.biz.projet.desc : "Projet pas encore décrit.");
+    if (S.biz?.coach?.score) L.push(`Solidité du projet : ${S.biz.coach.score}/10`);
+    if (S.biz?.analyse?.recommande) L.push(`Statut juridique envisagé : ${S.biz.analyse.recommande}`);
+    L.push("");
+  }
+  L.push("Dossier préparé avec Passerelle. Les informations viennent de la personne elle-même.");
+  return L.join("\n");
+}
+function openSendDossier(preset) {
+  const sc0 = S.lastScopes || { profil: true, candidatures: true, bilan: false, biz: false };
+  if (preset) Object.assign(sc0, preset);
+  modal(`<div class="modal" role="dialog" aria-modal="true" aria-labelledby="sdT"><div class="m-head"><div><p class="label">Mon accompagnement</p><h2 id="sdT">Envoyer mon dossier à mon conseiller</h2></div><button class="iconbtn" data-close aria-label="Fermer">✕</button></div>
+    <div class="m-body">
+      <p class="small muted">Choisissez ce que vous voulez partager. Passerelle prépare un dossier clair que vous envoyez vous-même par e-mail : vous gardez la main sur ce qui est transmis.</p>
+      <div class="field"><span class="flabel">Ce que je partage</span><div class="chips">${SHARE_SCOPES.map(([k, l]) => `<label class="check"><input type="checkbox" data-sds="${k}" ${sc0[k] ? "checked" : ""}> ${l}</label>`).join("")}</div></div>
+      <div class="field"><label for="sdMail">Adresse e-mail de mon conseiller (facultatif)</label><input type="email" id="sdMail" value="${esc(S.lastAdvisor || "")}" placeholder="conseiller@structure.fr"></div>
+      <div class="field"><label for="sdTxt">Aperçu du dossier (vous pouvez le modifier)</label><textarea id="sdTxt" rows="12"></textarea></div>
+      <div class="row"><button class="btn primary" id="sdMailGo">Écrire l'e-mail</button><button class="btn" id="sdCopy">Copier le dossier</button><button class="btn" id="sdDl">Télécharger (.txt)</button></div>
+      <p class="note">« Écrire l'e-mail » ouvre votre messagerie avec le dossier. S'il est trop long pour être ajouté automatiquement, il est copié : il suffit de le coller dans l'e-mail (Ctrl+V).</p>
+    </div></div>`);
+  const scopes = () => Object.fromEntries(SHARE_SCOPES.map(([k]) => [k, $(`[data-sds="${k}"]`).checked]));
+  let edited = false;
+  const refresh = () => { if (!edited) $("#sdTxt").value = dossierTexte(scopes()); };
+  refresh();
+  $("#sdTxt").oninput = () => edited = true;
+  $("#ov").querySelectorAll("[data-sds]").forEach(c => c.onchange = () => { if (edited && !confirm("Mettre à jour l'aperçu ? Vos modifications du texte seront remplacées.")) return; edited = false; refresh(); });
+  const remember = how => { const to = $("#sdMail").value.trim(); S.lastScopes = scopes(); S.lastAdvisor = to; (S.envois = S.envois || []).unshift({ d: Date.now(), to, how, scopes: scopes() }); S.envois = S.envois.slice(0, 20); save(); if (S.view === "accueil") renderAccueil(); };
+  $("#sdCopy").onclick = async () => { if (await copyText($("#sdTxt").value)) { remember("copie"); toast("Dossier copié. Collez-le dans un e-mail à votre conseiller."); } else toast("La copie n'a pas fonctionné : sélectionnez le texte et copiez-le."); };
+  $("#sdDl").onclick = () => { const n = (S.user?.nom || "mon").replace(/[^\p{L}\p{N}]+/gu, "-").toLowerCase(); if (blobDownload(`dossier-passerelle-${n}.txt`, $("#sdTxt").value)) { remember("fichier"); toast("Dossier téléchargé. Joignez-le à un e-mail pour votre conseiller."); } };
+  $("#sdMailGo").onclick = async () => {
+    const txt = $("#sdTxt").value, to = $("#sdMail").value.trim(), subj = `Mon dossier Passerelle${S.user?.nom ? " · " + S.user.nom : ""}`;
+    const long = encodeURIComponent(txt).length > 1800;
+    if (long) await copyText(txt);
+    const body = long ? "Bonjour,\n\nVoici mon dossier préparé avec Passerelle :\n\n[Collez ici votre dossier : Ctrl+V]\n\nBien cordialement," : `Bonjour,\n\nVoici mon dossier préparé avec Passerelle :\n\n${txt}\n\nBien cordialement,`;
+    remember("email"); location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
+    if (long) toast("Votre dossier est copié : collez-le dans l'e-mail (Ctrl+V).");
+  };
+}
+function backupData() {
+  const d = new Date().toISOString().slice(0, 10);
+  if (blobDownload(`passerelle-sauvegarde-${d}.json`, JSON.stringify({ app: "passerelle", version: 1, date: new Date().toISOString(), data: S }, null, 1), "application/json")) { S.lastBackup = Date.now(); save(); toast("Sauvegarde téléchargée. Gardez ce fichier : il permet de retrouver vos données sur un autre appareil."); }
+}
+function restoreData() {
+  const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".json,application/json";
+  inp.onchange = async () => {
+    const f = inp.files?.[0]; if (!f) return;
+    if (f.size > 8e6) { toast("Ce fichier est trop gros pour être une sauvegarde Passerelle."); return; }
+    let j; try { j = JSON.parse(await f.text()); } catch { toast("Ce fichier n'est pas une sauvegarde Passerelle valide."); return; }
+    if (!j || j.app !== "passerelle" || typeof j.data !== "object" || Array.isArray(j.data) || !j.data) { toast("Ce fichier n'est pas une sauvegarde Passerelle valide."); return; }
+    if (!confirm(`Restaurer la sauvegarde du ${new Date(j.date).toLocaleDateString("fr-FR")} ? Les données actuelles de cet appareil seront remplacées.`)) return;
+    try { localStorage.setItem(KEY, JSON.stringify(j.data)); } catch { toast("La restauration n'a pas pu être enregistrée sur cet appareil."); return; }
+    location.reload();
+  };
+  inp.click();
+}
+function wipeData() {
+  if (!confirm("Effacer toutes vos données de cet appareil (compte, CV, tests, candidatures) ? Pensez à faire une sauvegarde avant si vous voulez les garder.")) return;
+  try { localStorage.removeItem(KEY); } catch { }
+  location.reload();
+}
+function renderProtoBand() {
+  const B = $("#protoBand"); if (!B) return;
+  if (COMPTES_EN_LIGNE || S.bandOk) { B.hidden = true; return; }
+  B.hidden = false;
+  B.innerHTML = `<span aria-hidden="true">ⓘ</span><p><b>Vos informations restent sur cet appareil</b>, dans ce navigateur : rien n'est envoyé sur un serveur. Évitez d'y saisir des informations sensibles, et faites une sauvegarde pour les retrouver sur un autre appareil.</p>
+    <div class="row"><button class="btn sm" id="pbSave">Sauvegarder mes données</button><button class="btn ghost sm" id="pbMore">Restaurer · Effacer</button><button class="iconbtn" id="pbX" aria-label="Masquer ce message">✕</button></div>`;
+  $("#pbSave").onclick = backupData; $("#pbMore").onclick = () => openAccount();
+  $("#pbX").onclick = () => { S.bandOk = true; save(); renderProtoBand(); };
+}
+function proDemoBanner() {
+  const V = $("#v-pro"); if (COMPTES_EN_LIGNE || !V || V.querySelector(".pro-demo")) return;
+  V.insertAdjacentHTML("afterbegin", `<p class="note pro-demo"><span aria-hidden="true">ⓘ</span><span><b>Démonstration.</b> L'Espace pro montre ce que Passerelle proposera aux conseillers et aux recruteurs. Pour l'instant, rien n'est transmis entre comptes : les dossiers affichés sont des exemples, et les offres ou recommandations ne sont visibles que dans ce navigateur. Les personnes que vous accompagnez peuvent déjà vous envoyer leur dossier par e-mail depuis « Mon accompagnement » sur l'Accueil.</span></p>`);
+}
 function openShare() {
+  if (!COMPTES_EN_LIGNE) return openSendDossier();
   if (!S.user) { openAccount(openShare); toast("Créez d'abord votre compte."); return; }
   const list = () => S.partages.map((p, i) => `<div class="panel" style="padding:14px;gap:10px"><div class="row" style="justify-content:space-between"><b>${esc(p.nom)}</b><span class="small muted mono">${esc(p.code)}</span></div>
       <div class="chips">${SHARE_SCOPES.map(([k, l]) => `<button type="button" class="chip toggle" data-ps="${i}" data-k="${k}" aria-pressed="${!!p.scopes[k]}">${l}</button>`).join("")}</div>
@@ -2217,16 +2341,20 @@ $("#acctBtn").onclick = () => openAccount();
 function openAccount(then, asPro) {
   const u = S.user || {};
   modal(`<div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="accT">
-    <div class="m-head"><div><h2 id="accT">${S.user ? "Mon compte" : "Créer mon compte"}</h2><p class="small muted">Votre adresse sera transmise aux recruteurs pour qu'ils vous répondent.</p></div><button class="iconbtn" data-close aria-label="Fermer">✕</button></div>
+    <div class="m-head"><div><h2 id="accT">${S.user ? "Mon compte" : "Créer mon compte"}</h2><p class="small muted">${COMPTES_EN_LIGNE ? "Votre adresse sera transmise aux recruteurs pour qu'ils vous répondent." : "Votre compte est enregistré sur cet appareil, dans ce navigateur."}</p></div><button class="iconbtn" data-close aria-label="Fermer">✕</button></div>
     <form class="m-body" id="accForm">
       <div class="field"><label for="aNom">Prénom et nom</label><input type="text" id="aNom" required value="${esc(u.nom || (S.profile?.demo ? "" : S.profile?.nom || ""))}"></div>
       <div class="field"><label for="aMail">Adresse e-mail</label><input type="email" id="aMail" required value="${esc(u.email || "")}" placeholder="prenom.nom@exemple.fr"></div>
       <div class="field"><label for="aType">Je suis</label><select id="aType">${["Candidat", "Conseiller en insertion ou emploi (compte pro)", "École ou organisme de formation (compte pro)", "Cabinet de recrutement (compte pro)", "Recruteur ou entreprise (compte pro)", "Incubateur, CCI, CMA ou réseau d'accompagnement (compte pro)"].map(t => `<option ${(u.type === t || (asPro && !u.type && t.startsWith("Conseiller"))) ? "selected" : ""}>${t}</option>`).join("")}</select></div>
       <label class="check"><input type="checkbox" id="aRgpd" required ${u.nom ? "checked" : ""}> J'accepte que mon CV soit analysé pour me proposer des offres. Je peux supprimer mon compte et mes documents à tout moment.</label>
-      <label class="check"><input type="checkbox" id="aMailN" ${u.mailNotif !== false ? "checked" : ""}> Me prévenir aussi par e-mail quand un recruteur s'intéresse à ma candidature</label>
-      <div class="row"><button class="btn primary" type="submit">${S.user ? "Enregistrer" : "Créer mon compte"}</button>${S.user ? '<button class="btn" type="button" id="aShare">Partager avec mon conseiller</button><button class="btn ghost" type="button" id="aDel">Supprimer mon compte</button>' : ""}</div>
-      <p class="small muted">Prototype : le compte est enregistré dans ce navigateur seulement.</p>
-    </form></div>`);
+      <label class="check" ${COMPTES_EN_LIGNE ? "" : "hidden"}><input type="checkbox" id="aMailN" ${u.mailNotif !== false ? "checked" : ""}> Me prévenir aussi par e-mail quand un recruteur s'intéresse à ma candidature</label>
+      <div class="row"><button class="btn primary" type="submit">${S.user ? "Enregistrer" : "Créer mon compte"}</button>${S.user ? `<button class="btn" type="button" id="aShare">${COMPTES_EN_LIGNE ? "Partager avec mon conseiller" : "Envoyer mon dossier à mon conseiller"}</button><button class="btn ghost" type="button" id="aDel">Supprimer mon compte</button>` : ""}</div>
+    </form>
+    ${COMPTES_EN_LIGNE ? "" : `<div class="m-body acct-data"><span class="label">Mes données sur cet appareil</span>
+      <p class="small muted">Tout est enregistré dans ce navigateur seulement. Pour changer d'appareil ou ne rien perdre si vous videz votre navigateur, téléchargez une sauvegarde puis restaurez-la sur l'autre appareil.${S.lastBackup ? ` Dernière sauvegarde : ${fmtDate(S.lastBackup)}.` : ""}</p>
+      <div class="row"><button class="btn sm" type="button" id="aBk">Sauvegarder mes données</button><button class="btn sm" type="button" id="aRs">Restaurer une sauvegarde</button><button class="btn ghost sm" type="button" id="aWipe">Effacer mes données de cet appareil</button></div></div>`}
+    </div>`);
+  { const bk = $("#aBk"); if (bk) { bk.onclick = backupData; $("#aRs").onclick = restoreData; $("#aWipe").onclick = wipeData; } }
   $("#accForm").onsubmit = e => {
     e.preventDefault();
     const first = !S.user;
@@ -3101,7 +3229,8 @@ function proActive() { return S.pro.tab !== "pres" && (realPro() || S.pro.demo);
 function proTabs(cur) { return `<div class="subtabs pro-tabs" role="tablist">${[["pres", "Présentation"], ["acc", "Accompagnement"], ["rec", "Recrutement"]].map(([k, l]) => `<button role="tab" data-pmode="${k}" aria-selected="${cur === k}">${l}${k !== "pres" && !realPro() ? " · démo" : ""}</button>`).join("")}</div>`; }
 function bindProTabs(V) { V.querySelectorAll("[data-pmode]").forEach(b => b.onclick = () => { const k = b.dataset.pmode; S.pro.tab = k; if (k !== "pres") { S.pro.mode = k; if (!realPro()) S.pro.demo = true; } save(); renderPro(); scrollTo({ top: 0, behavior: "smooth" }); }); }
 function proMode() { if (S.user?.type?.startsWith("Recruteur") || S.user?.type?.startsWith("Cabinet")) return S.pro.mode || "rec"; return S.pro.mode || "acc"; }
-function renderPro() {
+function renderPro() { renderProInner(); proDemoBanner(); }
+function renderProInner() {
   const V = $("#v-pro");
   if (!proActive()) {
     const PI = {
@@ -3946,7 +4075,7 @@ function renderProjet() {
   V.querySelectorAll("[data-pl]").forEach(x => x.onchange = () => { plan.items[+x.dataset.pl].done = x.checked; save(); if (x.checked) celebrate(); renderProjet(); });
   const pg = $("#plGo"); if (pg) pg.onclick = () => buildPlan(P);
   const pr = $("#plRedo"); if (pr) pr.onclick = () => buildPlan(P);
-  const ps = $("#plShare"); if (ps) ps.onclick = () => S.partages?.length ? notify("➜", `Votre plan d'action pour « ${P.metier} » a été partagé avec ${S.partages[0].nom}.`) : openShare();
+  const ps = $("#plShare"); if (ps) ps.onclick = () => !COMPTES_EN_LIGNE ? openSendDossier({ bilan: true }) : S.partages?.length ? notify("➜", `Votre plan d'action pour « ${P.metier} » a été partagé avec ${S.partages[0].nom}.`) : openShare();
 }
 async function buildPlan(P) {
   const b = B(), now = Date.now(); $("#plGo, #plRedo") && ($("#plGo") || $("#plRedo")).replaceWith(Object.assign(document.createElement("p"), { className: "small muted", innerHTML: '<span class="spinner"></span> Je prépare votre plan…' }));
@@ -7648,7 +7777,7 @@ function boot() {
   initTheme(); initOrb(); applyA11y(); renderEasyBtn();
   $("#a11yBtn").onclick = e => { e.stopPropagation(); const P = $("#a11yPanel"); P.hidden = !P.hidden; $("#notifPanel").hidden = true; renderA11y(); };
   try { const t = new Date(); t.setHours(0, 0, 0, 0); S.infoRemDone = S.infoRemDone || []; for (const id of S.infoRem || []) { const e = INFO_EVENTS.find(x => x.id === id); if (!e || S.infoRemDone.includes(id)) continue; const diff = (dParse(e.debut) - t) / 864e5; if (diff >= 0 && diff <= 1) { S.infoRemDone.push(id); notify("📅", `${diff ? "Demain" : "Aujourd'hui"} : ${e.t}, ${e.lieu}${e.heure ? " (" + e.heure + ")" : ""}.`, { mail: true }); } } save(); } catch { }
-  renderAcct(); renderBell(); renderSearchForm(); runSearch(); /* Chaque ouverture du site commence sur l'Accueil */ go("accueil"); BOOTED = true; if (!/nointro/.test(location.hash)) setTimeout(orbIntro, 450);
+  renderAcct(); renderBell(); renderSearchForm(); runSearch(); renderProtoBand(); /* Chaque ouverture du site commence sur l'Accueil */ go("accueil"); BOOTED = true; if (!/nointro/.test(location.hash)) setTimeout(orbIntro, 450);
 }
 /* Démarrage après la lecture complète du script (les données intégrées en fin de fichier sont alors prêtes) */
 queueMicrotask(boot);
