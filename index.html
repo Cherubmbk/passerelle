@@ -158,6 +158,15 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 .tag.ex{background:var(--warn-soft);border-color:transparent;color:var(--warn)}
 .adcard{border:1px dashed var(--ad);background:var(--ad-soft);border-radius:14px;padding:14px 18px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between}
 .adcard p{font-size:.92rem}
+.plat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.plat{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;gap:12px}
+.plat-t{display:flex;flex-direction:column;gap:4px}.plat-t b{font-size:1.02rem}
+.plat-a{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.plat-a .btn{text-decoration:none}
+.plat-chips .chip{cursor:pointer;font:inherit}
+.paste-cta{display:flex;flex-direction:column;gap:12px;border-color:color-mix(in srgb,var(--accent) 30%,var(--line));background:linear-gradient(120deg,var(--accent-soft),var(--surface) 70%)}
+.paste-cta h3{margin:0 0 4px}
+.paste-list{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:12px}
+.paste-item{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}
 
 /* Pistes */
 .locked{border:2px dashed var(--piste-line);background:var(--piste-soft);border-radius:16px;padding:32px 24px;display:flex;flex-direction:column;align-items:flex-start;gap:14px}
@@ -1724,7 +1733,7 @@ table.cmp th.st-col,table.cmp td.st-col{background:color-mix(in srgb,var(--rc) 9
   <div class="view-head">
     <div>
       <h1>Offres et alertes</h1>
-      <p class="muted">Trouvez les offres de votre métier et soyez prévenu dès qu'une nouvelle est publiée. Seuls les métiers que vous avez choisis apparaissent ici.</p>
+      <p class="muted">Cherchez les offres de votre métier sur les principaux sites d'emploi, préparez chaque candidature avec Passerelle et soyez prévenu des nouvelles offres.</p>
     </div>
     <span class="ai-status"><span class="dot" id="aiDot"></span><span id="aiText">Assistant : connexion…</span></span>
   </div>
@@ -1931,7 +1940,12 @@ const DEFAULT = {
   recOffers: [{ id: "rdemo", recId: "rdemo", demo: true, titre: "Comptable", entreprise: "Cabinet Delorme & Associés", ville: "Lyon", contrat: "CDI", salaire: "34 – 40 k€ brut / an", competences: ["Saisie comptable", "Déclarations TVA", "Bilan", "Sage", "Excel"], description: "Cabinet de 25 personnes à Lyon 3e. Vous gérez un portefeuille de 50 dossiers PME, de la saisie au bilan. Télétravail 2 jours par semaine.", handi: true, sponso: false, d: now - DAY, source: "Publiée sur Passerelle", email: "recrutement@delorme-exemple.fr" }],
   recInbox: [],
 };
+/* Offres d'emploi : tant que Passerelle n'a pas de vraie source d'offres (API France Travail), il n'invente aucune offre.
+   La recherche ouvre les vraies offres sur les sites d'emploi. Le jour où une vraie source est branchée,
+   passer OFFRES_LIVE à true réactive la liste d'offres, les alertes intégrées et les relances automatiques. */
+const OFFRES_LIVE = false;
 let S = Object.assign({}, DEFAULT, load() || {});
+if (!OFFRES_LIVE) S.feed = (S.feed || []).filter(f => f.offer?.recId && !f.offer.demo);
 if (S.pistes === "loading") S.pistes = null; if (S.bilan?.analyse === "loading") S.bilan.analyse = null; if (S.biz?.analyse === "loading") S.biz.analyse = null; if (S.biz?.vigilAI === "loading") S.biz.vigilAI = null; if (S.biz?.coach === "loading") S.biz.coach = null; (S.bilan?.retenues || []).forEach(r => { if (r.parcours === "loading") r.parcours = null; }); if (S.quizRes === "loading") S.quizRes = null;
 
 /* ============ Assistant IA (capacité sample) ============ */
@@ -2022,7 +2036,7 @@ function renderChapters() {
 const lastInGroup = {};
 function renderOffTabs() {
   const T = $("#offTabs"); if (!T) return; const tab = S.offTab === "alertes" ? "alertes" : "offres", unread = S.feed.filter(f => !f.seen).length, nA = S.alerts.filter(a => a.on).length;
-  T.innerHTML = `<button role="tab" data-otab="offres" aria-selected="${tab === "offres"}">Rechercher des offres</button><button role="tab" data-otab="alertes" aria-selected="${tab === "alertes"}">Mes alertes${nA ? ` · ${nA}` : ""}${unread ? ` <span class="badge-in">${unread} nouvelle${unread > 1 ? "s" : ""}</span>` : ""}</button>`;
+  T.innerHTML = `<button role="tab" data-otab="offres" aria-selected="${tab === "offres"}">Rechercher des offres</button><button role="tab" data-otab="alertes" aria-selected="${tab === "alertes"}">${OFFRES_LIVE ? "Mes alertes" : "Alertes e-mail"}${OFFRES_LIVE && nA ? ` · ${nA}` : ""}${OFFRES_LIVE && unread ? ` <span class="badge-in">${unread} nouvelle${unread > 1 ? "s" : ""}</span>` : ""}</button>`;
   T.querySelectorAll("[data-otab]").forEach(b => b.onclick = () => { S.offTab = b.dataset.otab; save(); showOffTab(); });
 }
 function showOffTab() { const al = S.offTab === "alertes"; $("#offMain").hidden = al; $("#offAlerts").hidden = !al; if (al) renderAlertes(); else renderOffTabs(); }
@@ -2129,7 +2143,7 @@ function homeResStart() {
 function renderAccueil() {
   const V = $("#v-accueil"), u = S.user, nApps = S.apps.filter(a => !a.demo).length, bt = TESTS.filter(t => S.bilan?.res?.[t.id]?.done).length;
   const progress = {
-    emploi: [S.profile && !S.profile.demo, nApps > 0, S.alerts.some(a => !a.demo), nApps > 0],
+    emploi: [S.profile && !S.profile.demo, nApps > 0, S.alerts.some(a => !a.demo) || Object.values(S.alertSites || {}).some(Boolean), nApps > 0],
     jeunes: [S.profile && !S.profile.demo, ["Alternance", "Stage"].includes(S.search.contrat), (S.situation || []).includes("Moins de 26 ans"), nApps > 0],
     orient: [bt > 0, bt >= 3 && S.bilan?.res?.entretien?.done, !!S.bilan?.analyse, (S.bilan?.retenues || []).length > 0],
     biz: bizProgress().map(x => x[2]),
@@ -2313,10 +2327,11 @@ $("#mInput").onkeydown = e => {
 $("#villes").innerHTML = VILLES.map(v => `<option value="${v}">`).join("");
 function renderSearchForm() {
   const s = S.search;
+  if (!OFFRES_LIVE) $("#handi").closest("label").hidden = true;
   $("#ville").value = s.ville; $("#rayon").value = s.rayon; $("#contrat").value = s.contrat; $("#tt").checked = s.tt; $("#handi").checked = !!s.handi;
   renderMetierChips();
 }
-$("#mkAlert").onclick = () => { draft = newDraft(); draft.metiers = titlesSearched().length ? titlesSearched() : [...S.search.metiers]; draft.ville = $("#ville").value.trim() || S.search.ville; const r = $("#rayon").value; draft.zone = r === "0" || r === "10" ? "10" : r === "30" ? "20" : r === "50" || r === "100" ? "50" : r === "region" ? "region" : "national"; draft.contrat = $("#contrat").value; S.offTab = "alertes"; save(); showOffTab(); window.scrollTo({ top: 0 }); toast("Vérifiez vos réglages puis cliquez sur « Créer l'alerte »."); };
+$("#mkAlert").onclick = () => { if (!OFFRES_LIVE) { S.offTab = "alertes"; save(); showOffTab(); scrollTo({ top: 0 }); return; } draft = newDraft(); draft.metiers = titlesSearched().length ? titlesSearched() : [...S.search.metiers]; draft.ville = $("#ville").value.trim() || S.search.ville; const r = $("#rayon").value; draft.zone = r === "0" || r === "10" ? "10" : r === "30" ? "20" : r === "50" || r === "100" ? "50" : r === "region" ? "region" : "national"; draft.contrat = $("#contrat").value; S.offTab = "alertes"; save(); showOffTab(); window.scrollTo({ top: 0 }); toast("Vérifiez vos réglages puis cliquez sur « Créer l'alerte »."); };
 $("#searchForm").onsubmit = e => {
   e.preventDefault();
   const pending = $("#mInput").value.trim(); if (pending) { $("#mInput").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" })); }
@@ -2333,7 +2348,7 @@ function titlesSearched() {
 function genOffers() {
   const s = S.search, titles = titlesSearched(), list = [];
   const contrats = ["CDI", "CDI", "CDD", "Intérim", "Alternance", "Stage", "Freelance"];
-  titles.forEach((t, ti) => {
+  if (OFFRES_LIVE) titles.forEach((t, ti) => {
     const r = rng(hash(t + s.ville + s.rayon));
     const n = ti < s.metiers.length ? 4 + Math.floor(r() * 3) : 2 + Math.floor(r() * 2);
     for (let i = 0; i < n; i++) {
@@ -2353,8 +2368,8 @@ function genOffers() {
     }
   });
   const far = ["region", "pays"].includes(s.rayon);
-  for (const o of S.recOffers) if (!o.closed && titles.some(t => norm(o.titre).includes(norm(t)) || norm(t).includes(norm(o.titre))) && (far || norm(o.ville) === norm(s.ville))) list.push({ ...o, dist: 0, jours: Math.floor((Date.now() - o.d) / DAY), tt: /télétravail/i.test(o.description) });
-  if (titles.length) list.push({ id: "scam" + hash(titles[0] + s.ville), demoScam: true, titre: titles[0], entreprise: "Groupe International Recrutement", ville: s.ville, dist: 0, contrat: s.contrat === "Tous" ? "CDI" : s.contrat, salaire: "3 500 € par semaine", tt: true, jours: 0, source: "Jobboard partenaire", competences: ["Autonomie"], email: "contact.rh.offre@gmail.com", description: "Poste 100 % télétravail, débutant accepté, 3 500 € par semaine. Contactez-nous sur WhatsApp et réglez 49 € de frais de dossier par virement pour réserver votre place." });
+  for (const o of S.recOffers) if (!o.closed && (OFFRES_LIVE || !o.demo) && titles.some(t => norm(o.titre).includes(norm(t)) || norm(t).includes(norm(o.titre))) && (far || norm(o.ville) === norm(s.ville))) list.push({ ...o, dist: 0, jours: Math.floor((Date.now() - o.d) / DAY), tt: /télétravail/i.test(o.description) });
+  if (OFFRES_LIVE && titles.length) list.push({ id: "scam" + hash(titles[0] + s.ville), demoScam: true, titre: titles[0], entreprise: "Groupe International Recrutement", ville: s.ville, dist: 0, contrat: s.contrat === "Tous" ? "CDI" : s.contrat, salaire: "3 500 € par semaine", tt: true, jours: 0, source: "Jobboard partenaire", competences: ["Autonomie"], email: "contact.rh.offre@gmail.com", description: "Poste 100 % télétravail, débutant accepté, 3 500 € par semaine. Contactez-nous sur WhatsApp et réglez 49 € de frais de dossier par virement pour réserver votre place." });
   return list.filter(o => !(S.hidden || []).includes(o.id) && (s.contrat === "Tous" || o.contrat === s.contrat) && (!s.tt || o.tt) && (!s.handi || o.handi)).map(o => ({ ...o, ...scoreOf(o), scam: scamCheck(o) })).sort((a, b) => (a.scam.length - b.scam.length) || ((b.sponso ? 1 : 0) - (a.sponso ? 1 : 0)) || ((b.recId ? 1 : 0) - (a.recId ? 1 : 0)) || b.score - a.score || a.jours - b.jours);
 }
 function scoreOf(o) {
@@ -2401,18 +2416,115 @@ function deepLinks() {
     ["Intérim et cabinets (Google)", `https://www.google.com/search?q=${qa}%20${l}%20int%C3%A9rim%20OR%20cabinet&ibp=htl;jobs`],
   ];
 }
+let PLAT_T = null;
+function platTitle() { const t = titlesSearched(); if (!t.includes(PLAT_T)) PLAT_T = t[0] || ""; return PLAT_T; }
+function platQuery(t) {
+  const c = S.search.contrat, w = { CDI: "CDI", CDD: "CDD", "Intérim": "intérim", Alternance: "alternance", Stage: "stage", Freelance: "freelance" }[c];
+  return [t, w, S.search.tt ? "télétravail" : ""].filter(Boolean).join(" ");
+}
+function platLinks(t) {
+  const s = S.search, pays = s.rayon === "pays", qr = platQuery(t), q = encodeURIComponent(qr), v = pays ? "" : (s.ville || ""), l = encodeURIComponent(v);
+  const rad = { "0": 0, "10": 10, "30": 35, "50": 50, "100": 100 }[s.rayon];
+  const P = [
+    { n: "France Travail", d: "Le service public de l'emploi, avec les offres de ses sites partenaires.", u: `https://candidat.francetravail.fr/offres/recherche?motsCles=${q}`, tip: v ? `Ajoutez « ${v} » dans le lieu de travail sur le site.` : "" },
+    { n: "Indeed", d: "Le plus grand nombre d'offres, dans tous les métiers.", u: `https://fr.indeed.com/jobs?q=${q}&l=${l}${rad !== undefined && v ? `&radius=${rad}` : ""}` },
+    { n: "LinkedIn", d: "Offres d'entreprises et contact direct avec les recruteurs.", u: `https://www.linkedin.com/jobs/search/?keywords=${q}&location=${encodeURIComponent(v || "France")}` },
+    { n: "HelloWork", d: "Beaucoup d'offres en régions, dans tous les secteurs.", u: `https://www.hellowork.com/fr-fr/emploi/recherche.html?k=${q}&l=${l}` },
+    { n: "Welcome to the Jungle", d: "Entreprises qui recrutent, avec la présentation de leurs équipes.", u: `https://www.welcometothejungle.com/fr/jobs?query=${encodeURIComponent(qr + (v ? " " + v : ""))}` },
+    { n: "APEC", d: "Offres pour les cadres et les jeunes diplômés.", u: `https://www.apec.fr/candidat/recherche-emploi.html/emploi?motsCles=${q}` },
+    { n: "Jobijoba", d: "Regroupe les offres de nombreux sites d'emploi.", u: `https://www.jobijoba.com/fr/query/?what=${q}&where=${l}` },
+    { n: "Google Emploi", d: "Regroupe les offres publiées sur de nombreux sites, dont l'intérim et les cabinets.", u: `https://www.google.com/search?q=${encodeURIComponent(qr + (v ? " " + v : ""))}&ibp=htl;jobs` },
+  ];
+  if (["Alternance", "Stage"].includes(s.contrat)) P.splice(1, 0,
+    { n: "La bonne alternance", d: "Le site public des offres d'alternance et des entreprises qui recrutent en alternance.", u: "https://labonnealternance.apprentissage.beta.gouv.fr/", tip: "Saisissez votre métier et votre ville sur le site." },
+    { n: "1jeune1solution", d: "Le site public pour les jeunes : stages, alternances, premiers emplois et aides.", u: "https://www.1jeune1solution.gouv.fr/", tip: "Saisissez votre métier et votre ville sur le site." });
+  return P;
+}
+function platChips(cls) {
+  const ts = titlesSearched(), cur = platTitle();
+  return ts.length > 1 ? `<div class="chips plat-chips" role="group" aria-label="Métier à rechercher">${ts.map(t => `<button type="button" class="chip ${t === cur ? "main" : ""}" data-${cls}="${esc(t)}" aria-pressed="${t === cur}">${esc(t)}</button>`).join("")}</div>` : "";
+}
+function platCard(p, alert) {
+  const done = !!(S.alertSites || {})[p.n];
+  return `<div class="plat"><div class="plat-t"><b>${esc(p.n)}</b><span class="small muted">${esc(p.d)}</span>${p.tip ? `<span class="small">${esc(p.tip)}</span>` : ""}</div>
+    <div class="plat-a"><a class="btn ${alert ? "sm" : "primary sm"}" href="${p.u}" target="_blank" rel="noopener">${alert ? "Ouvrir la recherche" : "Voir les offres"} ↗</a>${alert ? `<label class="check small"><input type="checkbox" data-alsite="${esc(p.n)}" ${done ? "checked" : ""}> Alerte créée</label>` : ""}</div></div>`;
+}
+function pastedList() {
+  const P = S.pasted || [];
+  return P.length ? `<div class="paste-list"><span class="label">Vos offres collées</span>${P.map(o => `<div class="paste-item"><span><b>${esc(o.titre)}</b> · ${esc(o.entreprise)}${o.ville ? ` · ${esc(o.ville)}` : ""}</span><span class="row"><button class="btn sm" data-pasteopen="${o.id}">Préparer ma candidature</button><button class="btn ghost sm" data-pastedel="${o.id}" aria-label="Retirer cette offre">Retirer</button></span></div>`).join("")}</div>` : "";
+}
+function openPaste() {
+  modal(`<div class="modal" role="dialog" aria-modal="true" aria-labelledby="paT">
+    <div class="m-head"><div><p class="label">Préparer une candidature</p><h2 id="paT">Coller une offre</h2></div><button class="iconbtn" data-close aria-label="Fermer">✕</button></div>
+    <form class="m-body" id="paForm" autocomplete="off">
+      <p class="small muted">Copiez une annonce trouvée sur un site d'emploi et collez-la ici. Passerelle repère les compétences demandées, les compare à votre CV, adapte votre CV et prépare votre lettre de motivation.</p>
+      <div class="grid-2" style="gap:12px">
+        <div class="field"><label for="paT1">Intitulé du poste *</label><input type="text" id="paT1" required value="${esc(platTitle())}"></div>
+        <div class="field"><label for="paE">Entreprise *</label><input type="text" id="paE" required></div>
+        <div class="field"><label for="paV">Ville</label><input type="text" id="paV" list="villes" value="${esc(S.search.ville || "")}"></div>
+        <div class="field"><label for="paC">Contrat</label><select id="paC">${["CDI", "CDD", "Intérim", "Alternance", "Stage", "Freelance"].map(c => `<option ${S.search.contrat === c ? "selected" : ""}>${c}</option>`).join("")}</select></div>
+      </div>
+      <div class="field"><label for="paU">Lien de l'annonce (facultatif)</label><input type="url" id="paU" placeholder="https://…"></div>
+      <div class="field"><label for="paX">Texte de l'annonce *</label><textarea id="paX" rows="9" required placeholder="Collez ici tout le texte de l'annonce : missions, profil recherché, compétences…"></textarea></div>
+      <div class="m-foot" style="padding:0;border:0"><button type="button" class="btn" data-close>Annuler</button><button class="btn primary" type="submit">Analyser l'offre</button></div>
+    </form></div>`);
+  $("#paForm").onsubmit = e => {
+    e.preventDefault();
+    const titre = cap($("#paT1").value.trim()), entreprise = $("#paE").value.trim(), txt = $("#paX").value.trim();
+    if (!titre || !entreprise || txt.length < 40) { toast("Indiquez l'intitulé, l'entreprise et collez le texte complet de l'annonce."); return; }
+    let url = $("#paU").value.trim(); if (url && !/^https?:\/\//i.test(url)) url = "https://" + url;
+    const T = norm(txt), pool = [...new Set([...(S.profile?.competences || []), ...compsFor(titre), ...SOFT])];
+    let comps = pool.filter(c => c && T.includes(norm(c)));
+    if (!comps.length) comps = compsFor(titre).slice(0, 5);
+    const o = { id: "c" + uid(), pasted: true, titre, entreprise, ville: cap($("#paV").value.trim()), dist: 0, contrat: $("#paC").value, salaire: "Voir l'annonce", tt: /t[ée]l[ée]\s?travail/i.test(txt), jours: 0, competences: comps.slice(0, 10), email: "", url, description: txt };
+    S.pasted = [o, ...(S.pasted || [])].slice(0, 10); save(); closeModal(); runSearch();
+    openApply({ ...o, ...scoreOf(o) }, 0);
+  };
+}
+function openManualApp() {
+  const today = new Date().toISOString().slice(0, 10);
+  modal(`<div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="maT">
+    <div class="m-head"><div><p class="label">Suivi des candidatures</p><h2 id="maT">Ajouter une candidature</h2></div><button class="iconbtn" data-close aria-label="Fermer">✕</button></div>
+    <form class="m-body" id="maForm" autocomplete="off">
+      <p class="small muted">Vous avez postulé sur un site d'emploi ou directement auprès d'une entreprise ? Notez-le ici pour suivre vos relances et les réponses.</p>
+      <div class="field"><label for="maT1">Poste *</label><input type="text" id="maT1" required value="${esc(S.search.metiers[0] || "")}"></div>
+      <div class="field"><label for="maE">Entreprise *</label><input type="text" id="maE" required></div>
+      <div class="grid-2" style="gap:12px"><div class="field"><label for="maV">Ville</label><input type="text" id="maV" list="villes" value="${esc(S.search.ville || "")}"></div>
+      <div class="field"><label for="maD">Date de la candidature</label><input type="date" id="maD" value="${today}" max="${today}"></div></div>
+      <div class="field"><label for="maU">Lien de l'annonce (facultatif)</label><input type="url" id="maU" placeholder="https://…"></div>
+      <div class="m-foot" style="padding:0;border:0"><button type="button" class="btn" data-close>Annuler</button><button class="btn primary" type="submit">Ajouter à mon suivi</button></div>
+    </form></div>`);
+  $("#maForm").onsubmit = e => {
+    e.preventDefault();
+    const titre = cap($("#maT1").value.trim()), entreprise = $("#maE").value.trim(); if (!titre || !entreprise) return;
+    const dv = $("#maD").value, d = dv ? Math.min(Date.now(), new Date(dv + "T12:00").getTime()) : Date.now();
+    let url = $("#maU").value.trim(); if (url && !/^https?:\/\//i.test(url)) url = "https://" + url;
+    S.apps.unshift({ id: uid(), recId: null, manual: true, offer: { titre, entreprise, ville: cap($("#maV").value.trim()), email: "", url }, date: d, status: "sent", auto: false, freq: 7, max: 3, video: false, events: [{ d, t: "Candidature envoyée" }] });
+    save(); closeModal(); if (S.view === "suivi") renderSuivi(); toast("Candidature ajoutée à votre suivi.");
+  };
+}
 function runSearch() {
   OFFERS = genOffers();
   const s = S.search, R = $("#results");
   if (!s.metiers.length) { R.innerHTML = `<div class="empty">Ajoutez au moins un métier pour lancer la recherche.</div>`; return; }
   const titles = titlesSearched();
-  let html = `<div class="res-head">
+  let html = OFFRES_LIVE ? "" : `<div class="res-head">
+    <h2>Les offres pour « ${esc(platTitle())} »${s.rayon === "pays" ? " en France" : s.ville ? ` · ${esc(s.ville)}` : ""}</h2>
+    ${platChips("pt")}
+    <p class="small muted">Choisissez un site : la recherche s'ouvre déjà remplie avec votre métier${s.ville && s.rayon !== "pays" ? " et votre ville" : ""}${s.contrat !== "Tous" ? `, le contrat ${esc(s.contrat)}` : ""}${s.tt ? " et le télétravail" : ""}.</p></div>
+    <div class="plat-grid">${platLinks(platTitle()).map(p => platCard(p, false)).join("")}</div>
+    <aside class="panel paste-cta"><div><h3>Une offre vous plaît ?</h3><p class="small muted">Collez-la dans Passerelle : nous comparons ce qu'elle demande à votre CV, adaptons votre CV et préparons votre lettre de motivation.</p></div>
+      <div class="row"><button class="btn primary" type="button" id="pasteBtn">Coller une offre</button><button class="btn" type="button" id="manualBtn">J'ai postulé : l'ajouter à mon suivi</button></div>
+      ${pastedList()}</aside>`;
+  if (!OFFRES_LIVE) {
+    if (OFFERS.length) html += `<div class="res-head"><h2>Offres publiées directement sur Passerelle</h2></div>`;
+  } else html += `<div class="res-head">
     <h2><span class="mono">${OFFERS.length}</span> offres · ${esc(s.ville)}${s.rayon === "0" ? "" : s.rayon === "region" ? " et sa région" : s.rayon === "pays" ? " et tout le pays" : ` + ${s.rayon} km`}</h2>
     <div class="chips">${titles.map(t => `<span class="chip ${s.metiers.includes(t) ? "main" : ""}">${esc(t)}</span>`).join("")}</div>
     <p class="note"><span aria-hidden="true">ⓘ</span><span><b>Prototype :</b> ces offres sont des exemples générés pour montrer le fonctionnement. Dans la version finale, elles viendront de ${SOURCES.slice(0, 5).join(", ")} et des flux partenaires (HelloWork, intérim, cabinets), doublons fusionnés.</span></p>
     ${VILLES.slice(14).includes(cap(s.ville)) ? `<p class="note"><span aria-hidden="true">✈</span><span><b>Recherche à l'étranger :</b> vérifiez le visa ou permis de travail, faites traduire vos diplômes et générez votre CV dans la langue du pays (étape « CV adapté ATS »). Conseils complets dans Mon profil → Ma situation.</span></p>` : ""}
   </div>`;
-  if (!OFFERS.length) html += `<div class="empty">Aucune offre avec ces filtres. Élargissez le rayon ou le type de contrat.</div>`;
+  if (OFFRES_LIVE && !OFFERS.length) html += `<div class="empty">Aucune offre avec ces filtres. Élargissez le rayon ou le type de contrat.</div>`;
   OFFERS.forEach((o, i) => {
     const cls = o.score >= 75 ? "hi" : o.score >= 55 ? "mid" : "";
     html += `<article class="offer" id="${o.id}">
@@ -2425,13 +2537,19 @@ function runSearch() {
       ${o.scam.length ? `<div class="scam"><b>⚠ Offre probablement frauduleuse.</b> ${o.scam.map(esc).join(" · ")}. Un vrai employeur ne demande jamais d'argent ni vos coordonnées bancaires pour postuler.</div>` : ""}
       <div class="acts">${o.scam.length ? `<button class="btn primary sm" data-report="${o.id}">Signaler cette offre</button><button class="btn ghost sm" data-desc="${o.id}">Voir l'offre</button>` : `<button class="btn primary sm" data-apply="${o.id}" data-step="0">Postuler</button><button class="btn sm" data-apply="${o.id}" data-step="2">Lettre de motivation</button><button class="btn sm" data-apply="${o.id}" data-step="1">CV adapté ATS</button><button class="btn ghost sm" data-desc="${o.id}">Voir l'offre</button><button class="btn ghost sm" data-report="${o.id}">Signaler</button>`}</div>
     </article>`;
-    if (i === 2) html += `<aside class="adcard" aria-label="Publicité"><div><span class="tag prem">Publicité · exemple</span><p style="margin-top:6px"><b>Formation Excel avancé, finançable CPF.</b> Emplacement réservé à un organisme de formation partenaire, ciblé sur vos métiers.</p></div><span class="btn sm" aria-disabled="true">En savoir plus</span></aside>`;
+    if (OFFRES_LIVE && i === 2) html += `<aside class="adcard" aria-label="Publicité"><div><span class="tag prem">Publicité · exemple</span><p style="margin-top:6px"><b>Formation Excel avancé, finançable CPF.</b> Emplacement réservé à un organisme de formation partenaire, ciblé sur vos métiers.</p></div><span class="btn sm" aria-disabled="true">En savoir plus</span></aside>`;
   });
   html += `<p class="small muted" style="text-align:center;padding:8px">Envie de regarder d'autres métiers ? Découvrez des métiers proches de votre expérience dans <a href="#" data-v="pistes">Trouver ma voie → Mes pistes métiers</a>.</p>`;
   R.innerHTML = html;
   R.querySelectorAll("[data-desc]").forEach(b => b.onclick = () => { const d = $("#d-" + b.dataset.desc); d.hidden = !d.hidden; b.textContent = d.hidden ? "Voir l'offre" : "Masquer l'offre"; });
   R.querySelectorAll("[data-apply]").forEach(b => b.onclick = () => openApply(OFFERS.find(o => o.id === b.dataset.apply), +b.dataset.step));
   R.querySelectorAll("[data-report]").forEach(b => b.onclick = () => openReport(OFFERS.find(o => o.id === b.dataset.report)));
+  if (!OFFRES_LIVE) {
+    R.querySelectorAll("[data-pt]").forEach(b => b.onclick = () => { PLAT_T = b.dataset.pt; runSearch(); });
+    $("#pasteBtn").onclick = openPaste; $("#manualBtn").onclick = openManualApp;
+    R.querySelectorAll("[data-pasteopen]").forEach(b => b.onclick = () => { const o = S.pasted.find(x => x.id === b.dataset.pasteopen); if (o) openApply({ ...o, ...scoreOf(o) }, 0); });
+    R.querySelectorAll("[data-pastedel]").forEach(b => b.onclick = () => { S.pasted = S.pasted.filter(x => x.id !== b.dataset.pastedel); save(); runSearch(); });
+  }
 }
 
 /* ============ Profil ============ */
@@ -2740,7 +2858,7 @@ function renderApply() {
     <div class="m-head"><div><p class="label">${esc(o.entreprise)} · ${esc(o.ville)} · ${o.contrat}</p><h2 id="apT">${esc(o.titre)}</h2></div><button class="iconbtn" data-close aria-label="Fermer">✕</button></div>
     <div class="steps" role="tablist">${STEPS.map((s, i) => `<button data-step="${i}" ${i === step ? 'aria-current="step"' : ""} class="${i < step ? "done" : ""}"><span>${i + 1}</span>${s}</button>`).join("")}</div>
     <div class="m-body" id="apBody"></div>
-    <div class="m-foot"><button class="btn" id="apPrev" ${step === 0 ? "disabled" : ""}>Retour</button><button class="btn primary" id="apNext">${step === 3 ? "Envoyer ma candidature" : "Continuer"}</button></div></div>`);
+    <div class="m-foot"><button class="btn" id="apPrev" ${step === 0 ? "disabled" : ""}>Retour</button><button class="btn primary" id="apNext">${step === 3 ? (o.pasted ? "J'ai postulé : ajouter à mon suivi" : "Envoyer ma candidature") : "Continuer"}</button></div></div>`);
   $("#ov").querySelectorAll(".steps [data-step]").forEach(b => b.onclick = () => { APP.step = +b.dataset.step; renderApply(); });
   $("#apPrev").onclick = () => { APP.step--; renderApply(); };
   $("#apNext").onclick = () => { if (APP.step < 3) { APP.step++; renderApply(); } else sendApp(); };
@@ -2890,8 +3008,22 @@ function stepSend(B) {
   $("#freq").onchange = e => APP.freq = +e.target.value; $("#max").onchange = e => APP.max = +e.target.value;
   $("#relu").onchange = e => { APP.relu = e.target.checked; $("#apNext").disabled = !APP.relu; };
   $("#apNext").disabled = !APP.relu;
+  if (o.pasted) {
+    APP.auto = false;
+    B.querySelector(".recap").innerHTML = `<dt>Où postuler</dt><dd>Sur le site où vous avez trouvé l'annonce${o.url ? ` : <a href="${esc(o.url)}" target="_blank" rel="noopener">ouvrir l'annonce ↗</a>` : "."}</dd>
+      <dt>À joindre</dt><dd><span class="${cvOk ? "" : "muted"}">${cvOk ? "✓ CV adapté (copiez-le depuis l'étape 2)" : "✗ CV adapté pas encore généré (étape 2)"}</span><br><span class="${lmOk ? "" : "muted"}">${lmOk ? "✓ Lettre de motivation (copiez-la depuis l'étape 3)" : "✗ Lettre pas encore rédigée (étape 3)"}</span></dd>`;
+    B.querySelector(".ap-video")?.setAttribute("hidden", "");
+    $("#auto").closest(".panel").hidden = true;
+    $("#relu").parentElement.lastChild.textContent = " J'ai relu mon CV et ma lettre, et j'ai envoyé ma candidature sur le site de l'annonce.";
+    B.querySelector(".note").textContent = "Passerelle n'envoie pas la candidature à votre place : postulez sur le site de l'annonce, puis ajoutez-la à votre suivi pour noter vos relances et les réponses.";
+  }
 }
 function sendApp() {
+  if (APP.o.pasted) {
+    const o = APP.o, d = Date.now();
+    S.apps.unshift({ id: uid(), recId: null, manual: true, offer: { titre: o.titre, entreprise: o.entreprise, ville: o.ville, email: "", url: o.url || "" }, date: d, status: "sent", auto: false, freq: 7, max: 3, video: false, events: [{ d, t: "Candidature envoyée sur le site de l'annonce" + (APP.ats || APP.lettre ? `, avec ${[APP.ats ? "CV adapté" : "", APP.lettre ? "lettre de motivation" : ""].filter(Boolean).join(" et ")} préparés sur Passerelle` : "") }] });
+    save(); closeModal(); notify("✓", `Candidature « ${o.titre} » chez ${o.entreprise} ajoutée à votre suivi.`); celebrate(); return;
+  }
   if (!S.user) { const keep = APP; openAccount(() => { APP = keep; renderApply(); }); toast("Créez votre compte pour envoyer la candidature."); return; }
   const o = APP.o, d = Date.now();
   const appId = uid();
@@ -2906,12 +3038,13 @@ const STATUS = { sent: ["Envoyée", "sent"], relance: ["Relancée", "relance"], 
 function renderSuivi() {
   const V = $("#v-suivi"), A = S.apps;
   const nRel = A.reduce((n, a) => n + a.events.filter(e => e.k === "rl").length, 0);
-  V.innerHTML = `<div class="view-head"><div><h1>Suivi des candidatures</h1><p class="muted">Dates d'envoi, relances et réponses. Vous êtes prévenu dans l'application et par e-mail dès qu'un recruteur s'intéresse à votre candidature.</p></div>
-    <button class="btn sm" id="simWeek" ${A.length ? "" : "disabled"}>Simuler : une semaine passe</button></div>
+  V.innerHTML = `<div class="view-head"><div><h1>Suivi des candidatures</h1><p class="muted">${OFFRES_LIVE ? "Dates d'envoi, relances et réponses. Vous êtes prévenu dans l'application et par e-mail dès qu'un recruteur s'intéresse à votre candidature." : "Notez chaque candidature, vos relances et les réponses reçues : vous gardez une vue d'ensemble et savez quand relancer."}</p></div>
+    ${OFFRES_LIVE ? `<button class="btn sm" id="simWeek" ${A.length ? "" : "disabled"}>Simuler : une semaine passe</button>` : `<button class="btn primary sm" id="addApp">Ajouter une candidature</button>`}</div>
     <div class="stats"><div class="stat"><span class="label">Envoyées</span><span class="n">${A.length}</span></div><div class="stat"><span class="label">Relances</span><span class="n">${nRel}</span></div><div class="stat"><span class="label">Réponses</span><span class="n">${A.filter(a => ["interest", "entretien", "refus"].includes(a.status)).length}</span></div><div class="stat"><span class="label">Recommandations</span><span class="n">${S.recos.length}</span></div></div>
     ${S.recos.length ? `<div class="panel"><h2>Recommandations de votre conseiller</h2>${S.recos.map(r => `<div class="reco"><p class="label" style="color:var(--piste)">${esc(r.type)} · de ${esc(r.de)} · ${fmtDate(r.d)}</p><p><b>${esc(r.titre)}</b></p>${r.msg ? `<p class="small">${esc(r.msg)}</p>` : ""}</div>`).join("")}</div>` : ""}
-    <div id="appList" style="display:flex;flex-direction:column;gap:12px">${A.length ? A.map(appCard).join("") : `<div class="empty">Aucune candidature pour le moment. Depuis une offre, cliquez sur « Postuler ».</div>`}</div>`;
-  $("#simWeek").onclick = () => {
+    <div id="appList" style="display:flex;flex-direction:column;gap:12px">${A.length ? A.map(appCard).join("") : `<div class="empty">${OFFRES_LIVE ? "Aucune candidature pour le moment. Depuis une offre, cliquez sur « Postuler »." : "Aucune candidature pour le moment. Cliquez sur « Ajouter une candidature », ou préparez-en une à partir d'une offre collée dans « Trouver un emploi »."}</div>`}</div>`;
+  if (!OFFRES_LIVE) $("#addApp").onclick = openManualApp;
+  if (OFFRES_LIVE) $("#simWeek").onclick = () => {
     for (const a of S.apps) {
       a.date -= 7 * DAY; a.events.forEach(e => e.d -= 7 * DAY); if (a.next) a.next -= 7 * DAY;
       const n = a.events.filter(e => e.k === "rl").length;
@@ -2935,11 +3068,17 @@ function renderSuivi() {
   V.querySelectorAll("[data-nego]").forEach(b => b.onclick = () => openNegotiation(S.apps.find(x => x.id === b.dataset.nego)));
   V.querySelectorAll("[data-iprep]").forEach(b => b.onclick = () => openInterview(S.apps.find(x => x.id === b.dataset.iprep)));
   V.querySelectorAll("[data-autotog]").forEach(b => b.onclick = () => { const a = S.apps.find(x => x.id === b.dataset.autotog); a.auto = !a.auto; a.next = a.auto ? Date.now() + a.freq * DAY : null; save(); renderSuivi(); });
-  V.querySelectorAll("[data-manual]").forEach(b => b.onclick = () => { const a = S.apps.find(x => x.id === b.dataset.manual); const n = a.events.filter(e => e.k === "rl").length; a.events.push({ d: Date.now(), t: `Relance manuelle n°${n + 1} envoyée`, k: "rl" }); a.status = "relance"; save(); toast("Relance envoyée (simulé)."); renderSuivi(); });
+  V.querySelectorAll("[data-manual]").forEach(b => b.onclick = () => { const a = S.apps.find(x => x.id === b.dataset.manual); const n = a.events.filter(e => e.k === "rl").length; const ext = !OFFRES_LIVE && !a.recId; a.events.push({ d: Date.now(), t: ext ? `Relance n°${n + 1} faite` : `Relance manuelle n°${n + 1} envoyée`, k: "rl" }); a.status = "relance"; save(); toast(ext ? "Relance notée dans votre suivi." : "Relance envoyée (simulé)."); renderSuivi(); });
 }
 function appCard(a) {
   const [lab, cls] = STATUS[a.status] || STATUS.sent, open = ["sent", "relance"].includes(a.status);
-  const days = Math.floor((Date.now() - a.date) / DAY);
+  const days = Math.floor((Date.now() - a.date) / DAY), ext = !OFFRES_LIVE && !a.recId;
+  if (ext && open) return `<article class="app"><div class="app-top"><div><h3>${esc(a.offer.titre)} ${a.demo ? '<span class="tag ex">Exemple</span>' : ""}</h3><p class="small muted">${esc(a.offer.entreprise)}${a.offer.ville ? ` · ${esc(a.offer.ville)}` : ""} · envoyée le ${fmtDate(a.date)} (il y a ${days} j)${a.offer.url ? ` · <a href="${esc(a.offer.url)}" target="_blank" rel="noopener">voir l'annonce ↗</a>` : ""}</p></div><span class="pill ${cls}">${lab}</span></div>
+    <ol class="timeline">${a.events.map(e => `<li class="${e.k}"><time>${fmtDate(e.d)}</time>${esc(e.t)}</li>`).join("")}</ol>
+    <p class="small">${days >= 7 ? "Pas de réponse depuis une semaine : c'est le bon moment pour relancer poliment." : "Conseil : relancez si vous n'avez pas de réponse au bout de 7 à 10 jours."}</p>
+    <div class="row"><button class="btn sm" data-manual="${a.id}">J'ai relancé</button></div>
+    <div class="row"><span class="small muted">J'ai reçu une réponse :</span><button class="btn sm" data-resp="interest" data-id="${a.id}">Intérêt</button><button class="btn sm" data-resp="entretien" data-id="${a.id}">Entretien</button><button class="btn sm" data-resp="refus" data-id="${a.id}">Refus</button></div>
+  </article>`;
   return `<article class="app"><div class="app-top"><div><h3>${esc(a.offer.titre)} ${a.demo ? '<span class="tag ex">Exemple</span>' : ""}</h3><p class="small muted">${esc(a.offer.entreprise)} · ${esc(a.offer.ville)} · envoyée le ${fmtDate(a.date)} (il y a ${days} j)</p></div><span class="pill ${cls}">${lab}</span></div>
     <ol class="timeline">${a.events.map(e => `<li class="${e.k}"><time>${fmtDate(e.d)}</time>${esc(e.t)}</li>`).join("")}</ol>
     ${["interest", "entretien"].includes(a.status) ? `<div class="row"><button class="btn primary sm" data-iprep="${a.id}">Préparer mon entretien</button><button class="btn sm" data-nego="${a.id}">Négocier mon salaire</button></div>` : ""}
@@ -3171,6 +3310,7 @@ function radarSVG(z) {
   </svg>`;
 }
 function renderAlertes() {
+  if (!OFFRES_LIVE) return renderAlertLinks();
   const V = $("#offAlerts"); if (!draft) draft = newDraft(); renderOffTabs();
   const d = draft, unread = S.feed.filter(f => !f.seen).length;
   V.innerHTML = `<div class="view-head"><div><p class="muted">Soyez prévenu dès qu'un nouveau poste est publié dans votre domaine, à la distance que vous choisissez, et postulez en quelques clics.</p></div>
@@ -3227,6 +3367,17 @@ function renderAlertes() {
   V.querySelectorAll("[data-fapply]").forEach(b => b.onclick = () => { const f = S.feed.find(x => x.id === b.dataset.fapply); f.seen = true; save(); openApply({ ...f.offer, ...scoreOf(f.offer) }, +b.dataset.step); });
   V.querySelectorAll("[data-fseen]").forEach(b => b.onclick = () => { const f = S.feed.find(x => x.id === b.dataset.fseen); f.seen = true; save(); renderAlertes(); });
   V.querySelectorAll("[data-fdel]").forEach(b => b.onclick = () => { S.feed = S.feed.filter(x => x.id !== b.dataset.fdel); save(); renderAlertes(); });
+}
+function renderAlertLinks() {
+  const V = $("#offAlerts"); renderOffTabs();
+  const t = platTitle();
+  V.innerHTML = `<div class="panel"><h2>Recevoir les nouvelles offres par e-mail</h2>
+    <p class="muted">Chaque site d'emploi propose des alertes gratuites. Ouvrez votre recherche sur un site, puis activez l'alerte e-mail sur la page de résultats (bouton « Créer une alerte » ou équivalent). Il faut souvent un compte gratuit sur le site.</p>
+    ${t ? `<p class="small">Recherche utilisée : <b>${esc(platQuery(t))}</b>${S.search.ville && S.search.rayon !== "pays" ? ` · ${esc(S.search.ville)}` : ""}. Modifiez-la dans l'onglet « Rechercher des offres ».</p>${platChips("alt")}` : `<p class="small">Ajoutez d'abord un métier dans l'onglet « Rechercher des offres ».</p>`}
+    <p class="small muted">Cochez « Alerte créée » pour garder une trace des sites sur lesquels vous êtes inscrit.</p></div>
+    ${t ? `<div class="plat-grid">${platLinks(t).map(p => platCard(p, true)).join("")}</div>` : ""}`;
+  V.querySelectorAll("[data-alt]").forEach(b => b.onclick = () => { PLAT_T = b.dataset.alt; renderAlertLinks(); });
+  V.querySelectorAll("[data-alsite]").forEach(c => c.onchange = () => { S.alertSites = S.alertSites || {}; S.alertSites[c.dataset.alsite] = c.checked; save(); });
 }
 function feedCard(f) {
   const o = { ...f.offer, ...scoreOf(f.offer) }, mins = Math.max(1, Math.round((Date.now() - f.d) / 6e4));
