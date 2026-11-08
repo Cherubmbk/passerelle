@@ -1931,13 +1931,13 @@ function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {}
 const now = Date.now();
 const DEFAULT = {
   user: null,
-  cvText: EXAMPLE_CV, lmText: "", fileName: "",
-  profile: EXAMPLE_PROFILE,
-  search: { metiers: ["Comptable"], variantes: { "Comptable": ["Assistant comptable"] }, extra: {}, ville: "Lyon", rayon: "30", contrat: "Tous", tt: false },
-  apps: [{ id: "demo1", demo: true, offer: { titre: "Comptable fournisseurs", entreprise: "Groupe Hexalis", ville: "Lyon", email: "recrutement@hexalis-exemple.fr" }, date: now - 9 * DAY, status: "relance", auto: true, freq: 7, max: 3, events: [{ d: now - 9 * DAY, t: "Candidature envoyée", k: "" }, { d: now - 2 * DAY, t: "Relance automatique n°1 envoyée", k: "rl" }], next: now + 5 * DAY }],
-  notifs: [{ id: "n0", d: now - 2 * DAY, ic: "↻", t: "Relance automatique envoyée pour « Comptable fournisseurs » chez Groupe Hexalis (exemple).", read: true }],
+  cvText: "", lmText: "", fileName: "",
+  profile: null,
+  search: { metiers: [], variantes: {}, extra: {}, ville: "", rayon: "30", contrat: "Tous", tt: false },
+  apps: [],
+  notifs: [],
   recos: [],
-  alerts: [{ id: "al0", demo: true, metiers: ["Comptable", "Assistant comptable"], ville: "Lyon", zone: "20", contrat: "Tous", freq: "instant", canaux: { app: true, mail: true, push: true }, on: true, created: now - 5 * DAY }],
+  alerts: [],
   feed: [],
   bilan: { res: {}, analyse: null, precisions: [], avis: {}, retenues: [], ecartees: [] },
   pistesOpen: false, pistes: null, quiz: {}, quizRes: null,
@@ -1956,6 +1956,11 @@ const OFFRES_LIVE = false;
 const COMPTES_EN_LIGNE = false;
 let S = Object.assign({}, DEFAULT, load() || {});
 if (!OFFRES_LIVE) S.feed = (S.feed || []).filter(f => f.offer?.recId && !f.offer.demo);
+/* Plus de données d'exemple chez les visiteurs (CV « Camille Martin », candidature et alerte d'exemple) */
+if (S.profile?.demo) { S.profile = null; if (S.cvText === EXAMPLE_CV) S.cvText = ""; }
+S.apps = (S.apps || []).filter(a => !a.demo); S.alerts = (S.alerts || []).filter(a => !a.demo); S.notifs = (S.notifs || []).filter(n => n.id !== "n0");
+/* À chaque ouverture du site, la recherche d'emploi repart à zéro (métiers, ville, rayon, contrat, télétravail) */
+S.search = { metiers: [], variantes: {}, extra: {}, ville: "", rayon: "30", contrat: "Tous", tt: false, handi: false };
 if (S.pistes === "loading") S.pistes = null; if (S.bilan?.analyse === "loading") S.bilan.analyse = null; if (S.biz?.analyse === "loading") S.biz.analyse = null; if (S.biz?.vigilAI === "loading") S.biz.vigilAI = null; if (S.biz?.coach === "loading") S.biz.coach = null; (S.bilan?.retenues || []).forEach(r => { if (r.parcours === "loading") r.parcours = null; }); if (S.quizRes === "loading") S.quizRes = null;
 
 /* ============ Assistant IA (capacité sample) ============ */
